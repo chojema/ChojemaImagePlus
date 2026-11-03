@@ -1,18 +1,15 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
+import { $, Entry, samePath, showToast } from "./common";
+import { Gallery } from "./gallery";
 import { errorText, t } from "./i18n";
 import { Library } from "./library";
-import { View } from "./view";
-
-interface Entry {
-  path: string;
-  name: string;
-  size: number;
-  modified: number;
-}
+import { loadSettings, saveSettings, settings, SettingsDialog } from "./settings";
+import { FolderTree } from "./tree";
+import { Viewer } from "./viewer";
 
 interface Listing {
   entries: Entry[];
@@ -21,384 +18,210 @@ interface Listing {
 }
 
 const APP_NAME = "Chojema Image+";
-const IS_WINDOWS = navigator.userAgent.includes("Windows");
-const ZOOM_STEP = 1.25;
-
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const stage = $<HTMLElement>("stage");
-const img = $<HTMLImageElement>("image");
-const empty = $<HTMLElement>("empty");
-const message = $<HTMLElement>("message");
-const bar = $<HTMLElement>("bar");
-const infoName = $<HTMLElement>("info-name");
-const infoDetail = $<HTMLElement>("info-detail");
-const zoomLabel = $<HTMLButtonElement>("zoom-label");
-const toast = $<HTMLElement>("toast");
-const favoriteButton = $<HTMLButtonElement>("favorite-button");
-
 const appWindow = getCurrentWindow();
-const view = new View(stage, img);
-const library = new Library($("panel"), $("empty-lists"), {
-  open: (path) => void openPaths([path]),
-  toast: (text) => showToast(text),
-});
-library.onChange = () => updateFavoriteButton();
-
-let entries: Entry[] = [];
-let folder: string | null = null;
-let index = -1;
-let loadToken = 0;
 let extensions: string[] = [];
-const preloaded = new Map<string, HTMLImageElement>();
+let mode: "browser" | "viewer" = "browser";
 
-const current = (): Entry | undefined => entries[index];
+const library = new Library($("side-library"), $("panel"), {
+  open: (path) => void navigate(path),
+  toast: showToast,
+});
+const tree = new FolderTree($("tree"), (path) => void navigate(path));
+const gallery = new Gallery({
+  navigate: (path) => void navigate(path),
+  open: (entries, index) => openViewer(entries, index, gallery.folder),
+  favorite: () => toggleFavorite(),
+  chooseFolder: () => void chooseFolder(),
+  chooseFile: () => void chooseFile(),
+  toast: showToast,
+});
+const viewer = new Viewer({
+  back: () => back(),
+  favorite: () => toggleFavorite(),
+  folders: () => library.toggleOpen(),
+});
+const settingsDialog = new SettingsDialog();
 
-function srcOf(entry: Entry): string {
-  return `${convertFileSrc(entry.path, "img")}?v=${entry.modified}`;
+function folderName(path: string): string {
+  return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 }
 
-function formatSize(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB"];
-  let n = bytes;
-  let u = 0;
-  while (n >= 1024 && u < units.length - 1) {
-    n /= 1024;
-    u++;
+function setMode(next: "browser" | "viewer"): void {
+  mode = next;
+  document.body.classList.toggle("mode-browser", next === "browser");
+  document.body.classList.toggle("mode-viewer", next === "viewer");
+  if (next === "browser") {
+    library.close();
+    viewer.close();
+    void appWindow.setTitle(gallery.folder ? `${folderName(gallery.folder)} - ${APP_NAME}` : APP_NAME);
+    $("grid").focus();
   }
-  return `${n.toFixed(u === 0 || n >= 100 ? 0 : 1)} ${units[u]}`;
+  updateFavorite();
 }
 
-function updateInfo(): void {
-  const entry = current();
-  if (!entry) {
-    infoName.textContent = "";
-    infoDetail.textContent = "";
-    zoomLabel.textContent = "";
-    void appWindow.setTitle(APP_NAME);
-    return;
-  }
-  const parts = [`${index + 1} / ${entries.length}`];
-  if (view.loaded) parts.push(`${view.width} × ${view.height}`);
-  parts.push(formatSize(entry.size));
-  infoName.textContent = entry.name;
-  infoDetail.textContent = parts.join("  ·  ");
-  zoomLabel.textContent = view.loaded ? `${Math.round(view.scale * 100)}%` : "";
-  void appWindow.setTitle(`${entry.name} - ${APP_NAME}`);
+function currentFolder(): string | null {
+  return mode === "viewer" ? viewer.folder : gallery.folder;
 }
 
-let toastTimer = 0;
-function showToast(text: string): void {
-  toast.textContent = text;
-  toast.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (toast.hidden = true), 1600);
-}
-
-function showMessage(text: string | null): void {
-  message.hidden = text === null;
-  message.textContent = text ?? "";
-}
-
-function setEmpty(isEmpty: boolean): void {
-  empty.hidden = !isEmpty;
-  document.body.classList.toggle("has-image", !isEmpty);
-}
-
-function preloadAround(): void {
-  const wanted = new Set<string>();
-  for (const offset of [1, -1, 2]) {
-    const entry = entries[index + offset];
-    if (!entry) continue;
-    const src = srcOf(entry);
-    wanted.add(src);
-    if (!preloaded.has(src)) {
-      const pre = new Image();
-      pre.decoding = "async";
-      pre.src = src;
-      preloaded.set(src, pre);
-    }
-  }
-  for (const key of preloaded.keys()) {
-    if (!wanted.has(key)) preloaded.delete(key);
-  }
-}
-
-function show(i: number): void {
-  if (i < 0 || i >= entries.length) return;
-  index = i;
-  const entry = entries[i];
-  const token = ++loadToken;
-  view.width = 0;
-  view.height = 0;
-  img.classList.remove("visible");
-  showMessage(null);
-  updateInfo();
-
-  img.onload = () => {
-    if (token !== loadToken) return;
-    view.reset(img.naturalWidth, img.naturalHeight);
-    img.classList.add("visible");
-    updateInfo();
-  };
-  img.onerror = () => {
-    if (token !== loadToken) return;
-    showMessage(IS_WINDOWS && /\.hei[cf]$/i.test(entry.name) ? t.heifHint : t.loadFailed);
-    updateInfo();
-  };
-  img.src = srcOf(entry);
-  preloadAround();
-}
-
-function go(delta: number): void {
-  if (!entries.length) return;
-  const next = index + delta;
-  if (next < 0) return showToast(t.first);
-  if (next >= entries.length) return showToast(t.last);
-  show(next);
-}
-
-async function openPaths(paths: string[]): Promise<void> {
-  if (!paths.length) return;
-  try {
-    const listing = await invoke<Listing>("open_paths", { paths });
-    entries = listing.entries;
-    folder = listing.folder;
-    preloaded.clear();
-    void library.load();
-    setEmpty(false);
-    show(listing.index);
-  } catch (err) {
-    if (entries.length) showToast(errorText(err));
-    else {
-      setEmpty(true);
-      showToast(errorText(err));
-    }
-  }
-}
-
-async function chooseFile(): Promise<void> {
-  const picked = await open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: t.images, extensions }],
-  });
-  if (typeof picked === "string") await openPaths([picked]);
-}
-
-async function chooseFolder(): Promise<void> {
-  const picked = await open({ multiple: false, directory: true });
-  if (typeof picked === "string") await openPaths([picked]);
-}
-
-async function toggleFullscreen(force?: boolean): Promise<void> {
-  const next = force ?? !(await appWindow.isFullscreen());
-  await appWindow.setFullscreen(next);
-  document.body.classList.toggle("fullscreen", next);
-}
-
-function toggleZoom(cx?: number, cy?: number): void {
-  if (!view.loaded) return;
-  if (view.fitted && Math.abs(view.scale - 1) > 0.001) view.zoomTo(1, cx, cy);
-  else view.fit();
-  updateInfo();
-}
-
-function updateFavoriteButton(): void {
+function updateFavorite(): void {
+  const folder = currentFolder();
   const on = library.isFavorite(folder);
-  favoriteButton.classList.toggle("on", on);
-  favoriteButton.disabled = !folder;
+  gallery.setFavorite(library.isFavorite(gallery.folder));
+  const button = $<HTMLButtonElement>("favorite-button");
+  button.classList.toggle("on", on);
+  button.disabled = !folder;
 }
 
 function toggleFavorite(): void {
+  const folder = currentFolder();
   if (!folder) {
-    if (entries.length) showToast(t.noFolder);
+    if (mode === "viewer") showToast(t.noFolder);
     return;
   }
   void library.toggle(folder);
 }
 
-const actions: Record<string, () => void> = {
-  prev: () => go(-1),
-  next: () => go(1),
-  first: () => show(0),
-  last: () => show(entries.length - 1),
-  "zoom-in": () => view.loaded && (view.zoomBy(ZOOM_STEP), updateInfo()),
-  "zoom-out": () => view.loaded && (view.zoomBy(1 / ZOOM_STEP), updateInfo()),
-  "toggle-zoom": () => toggleZoom(),
-  actual: () => view.loaded && (view.zoomTo(1), updateInfo()),
-  fit: () => view.loaded && (view.fit(), updateInfo()),
-  "rotate-left": () => view.loaded && (view.rotate(-90), updateInfo()),
-  "rotate-right": () => view.loaded && (view.rotate(90), updateInfo()),
-  fullscreen: () => void toggleFullscreen(),
-  open: () => void chooseFile(),
-  "open-folder": () => void chooseFolder(),
-  favorite: () => toggleFavorite(),
-  folders: () => library.toggleOpen(),
-};
-
-const tooltips: Record<string, string> = {
-  prev: t.prev,
-  next: t.next,
-  "zoom-out": t.zoomOut,
-  "zoom-in": t.zoomIn,
-  "toggle-zoom": t.toggleZoom,
-  fit: t.fit,
-  "rotate-left": t.rotateLeft,
-  "rotate-right": t.rotateRight,
-  fullscreen: t.fullscreen,
-  open: t.open,
-  favorite: t.favoriteToggle,
-  folders: t.folders,
-};
-
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-action]")) {
-  const action = button.dataset.action!;
-  button.title = tooltips[action] ?? "";
-  button.setAttribute("aria-label", button.title);
-  button.addEventListener("click", () => actions[action]?.());
+async function navigate(path: string, focusPath?: string): Promise<void> {
+  if (mode !== "browser") setMode("browser");
+  const ok = await gallery.load(path, focusPath);
+  if (!ok) return;
+  library.setActive(path);
+  void appWindow.setTitle(`${folderName(path)} - ${APP_NAME}`);
+  updateFavorite();
+  void library.load();
+  void tree.reveal(path);
 }
 
-$("empty-text").textContent = t.emptyText;
-$("empty-open-file").textContent = t.openFile;
-$("empty-open-folder").textContent = t.openFolder;
-$("empty-open-file").addEventListener("click", () => void chooseFile());
-$("empty-open-folder").addEventListener("click", () => void chooseFolder());
+function openViewer(entries: Entry[], index: number, folder: string | null): void {
+  if (!entries.length) return;
+  setMode("viewer");
+  viewer.open(entries, index, folder);
+}
 
-// Physical key codes keep shortcuts working when a non-Latin input method is active.
-const keymap: Record<string, string> = {
-  ArrowRight: "next",
-  ArrowDown: "next",
-  PageDown: "next",
-  Space: "next",
-  ArrowLeft: "prev",
-  ArrowUp: "prev",
-  PageUp: "prev",
-  Backspace: "prev",
-  Home: "first",
-  End: "last",
-  Equal: "zoom-in",
-  NumpadAdd: "zoom-in",
-  Minus: "zoom-out",
-  NumpadSubtract: "zoom-out",
-  Digit0: "fit",
-  Numpad0: "fit",
-  Digit1: "actual",
-  Numpad1: "actual",
-  KeyR: "rotate-right",
-  KeyL: "rotate-left",
-  KeyF: "fullscreen",
-  F11: "fullscreen",
-  Enter: "fullscreen",
-  NumpadEnter: "fullscreen",
-};
+function back(): void {
+  const entry = viewer.current;
+  const folder = viewer.folder;
+  if (viewer.isFullscreen) void viewer.toggleFullscreen(false);
+  if (folder && !samePath(folder, gallery.folder)) {
+    void navigate(folder, entry?.path);
+    return;
+  }
+  setMode("browser");
+  if (entry) gallery.reveal(entry.path);
+}
+
+/** Folders open in the list; files open in the viewer, with their folder listed behind it. */
+async function openPaths(paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  let listing: Listing;
+  try {
+    listing = await invoke<Listing>("open_paths", { paths });
+  } catch (err) {
+    if (paths.length === 1 && err === "no_images") return navigate(paths[0]);
+    showToast(errorText(err));
+    return;
+  }
+  if (paths.length === 1 && samePath(listing.folder, paths[0])) return navigate(paths[0]);
+
+  if (paths.length === 1 && listing.folder) {
+    const file = listing.entries[listing.index].path;
+    const ok = await gallery.load(listing.folder, file);
+    if (ok) {
+      library.setActive(listing.folder);
+      void tree.reveal(listing.folder);
+      void library.load();
+      const i = gallery.entries.findIndex((e) => samePath(e.path, file));
+      openViewer(gallery.entries, Math.max(0, i), listing.folder);
+      return;
+    }
+  }
+  void library.load();
+  openViewer(listing.entries, listing.index, listing.folder);
+}
+
+async function chooseFile(): Promise<void> {
+  const picked = await open({ multiple: false, directory: false, filters: [{ name: t.images, extensions }] });
+  if (typeof picked === "string") await openPaths([picked]);
+}
+
+async function chooseFolder(): Promise<void> {
+  const picked = await open({ multiple: false, directory: true });
+  if (typeof picked === "string") await navigate(picked);
+}
+
+function toggleSidebar(): void {
+  document.body.classList.toggle("sidebar-hidden");
+}
 
 window.addEventListener("keydown", (e) => {
-  if (e.target instanceof HTMLInputElement) return;
+  if (settingsDialog.isOpen) {
+    if (e.key === "Escape") settingsDialog.close();
+    return;
+  }
+  const target = e.target as HTMLElement;
+  if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
+    if (e.key === "Escape") target.blur();
+    return;
+  }
   const mod = e.ctrlKey || e.metaKey;
   if (mod && !e.altKey) {
     const digit = /^Digit([1-9])$/.exec(e.code);
     const command =
-      e.code === "KeyO" ? (e.shiftKey ? actions["open-folder"] : actions.open)
+      e.code === "KeyO" ? () => void (e.shiftKey ? chooseFolder() : chooseFile())
       : e.code === "KeyD" ? toggleFavorite
-      : e.code === "KeyB" ? () => library.toggleOpen()
+      : e.code === "KeyB" ? () => (mode === "viewer" ? library.toggleOpen() : toggleSidebar())
+      : e.code === "Comma" ? () => settingsDialog.open()
       : digit ? () => library.openFavorite(Number(digit[1]))
       : null;
     if (command) {
       e.preventDefault();
       command();
-    }
-    return;
-  }
-  if (e.key === "Escape") {
-    if (library.isOpen) library.close();
-    else if (document.body.classList.contains("fullscreen")) void toggleFullscreen(false);
-    return;
-  }
-  if (e.altKey) return;
-  let action = keymap[e.code];
-  if (e.code === "KeyR" && e.shiftKey) action = "rotate-left";
-  if (action) {
-    e.preventDefault();
-    actions[action]();
-  }
-});
-
-let wheelAccum = 0;
-let wheelLock = 0;
-stage.addEventListener(
-  "wheel",
-  (e) => {
-    if (!view.loaded) return;
-    e.preventDefault();
-    const rect = stage.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-
-    // Pinch gestures and Ctrl/Cmd + wheel zoom around the pointer.
-    if (e.ctrlKey || e.metaKey) {
-      view.zoomBy(Math.exp(-dy * 0.01), cx, cy);
-      updateInfo();
       return;
     }
-    if (view.pannable) {
-      const dx = e.deltaMode === 1 ? e.deltaX * 16 : e.deltaX;
-      view.panBy(e.shiftKey ? -dy : -dx, e.shiftKey ? 0 : -dy);
+  }
+  if (e.key === "Escape" && library.isOpen) {
+    library.close();
+    return;
+  }
+  if (mode === "viewer") {
+    if (e.key === "Escape") {
+      if (viewer.isFullscreen) void viewer.toggleFullscreen(false);
+      else back();
       return;
     }
-    const now = performance.now();
-    if (now < wheelLock) return;
-    wheelAccum += dy;
-    if (Math.abs(wheelAccum) >= 40) {
-      go(wheelAccum > 0 ? 1 : -1);
-      wheelAccum = 0;
-      wheelLock = now + 180;
-    }
-  },
-  { passive: false },
-);
-
-let drag: { id: number; x: number; y: number } | null = null;
-stage.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0 || !view.loaded || !view.pannable) return;
-  drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
-  stage.setPointerCapture(e.pointerId);
-  stage.classList.add("dragging");
-});
-stage.addEventListener("pointermove", (e) => {
-  if (!drag || drag.id !== e.pointerId) return;
-  view.panBy(e.clientX - drag.x, e.clientY - drag.y);
-  drag.x = e.clientX;
-  drag.y = e.clientY;
-});
-const endDrag = (e: PointerEvent) => {
-  if (!drag || drag.id !== e.pointerId) return;
-  drag = null;
-  stage.classList.remove("dragging");
-};
-stage.addEventListener("pointerup", endDrag);
-stage.addEventListener("pointercancel", endDrag);
-
-stage.addEventListener("dblclick", (e) => {
-  const rect = stage.getBoundingClientRect();
-  toggleZoom(e.clientX - rect.left, e.clientY - rect.top);
-});
-
-new ResizeObserver(() => {
-  if (view.loaded) {
-    view.relayout();
-    updateInfo();
+    viewer.handleKey(e);
+  } else {
+    gallery.handleKey(e);
   }
-}).observe(stage);
-
-// In full screen the bar slides in when the pointer nears the bottom edge.
-window.addEventListener("mousemove", (e) => {
-  bar.classList.toggle("peek", window.innerHeight - e.clientY < 90);
 });
 
-void appWindow.onResized(async () => {
-  document.body.classList.toggle("fullscreen", await appWindow.isFullscreen());
+// Dragging the splitter resizes the sidebar.
+const splitter = $("splitter");
+splitter.addEventListener("pointerdown", (e) => {
+  splitter.setPointerCapture(e.pointerId);
+  document.body.classList.add("resizing");
+  const move = (ev: PointerEvent) => {
+    const width = Math.min(520, Math.max(180, ev.clientX));
+    document.documentElement.style.setProperty("--sidebar", `${width}px`);
+  };
+  const up = (ev: PointerEvent) => {
+    splitter.releasePointerCapture(ev.pointerId);
+    splitter.removeEventListener("pointermove", move);
+    splitter.removeEventListener("pointerup", up);
+    document.body.classList.remove("resizing");
+    const width = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar"), 10);
+    if (width) saveSettings({ sidebarWidth: width });
+  };
+  splitter.addEventListener("pointermove", move);
+  splitter.addEventListener("pointerup", up);
 });
+
+$("settings-label").textContent = t.settings;
+$("settings-button").title = `${t.settings} (Ctrl/⌘ + ,)`;
+$("settings-button").addEventListener("click", () => settingsDialog.open());
+$("tree-title").textContent = t.locations;
+
+library.onChange = () => updateFavorite();
 
 void getCurrentWebview().onDragDropEvent((event) => {
   const p = event.payload;
@@ -412,12 +235,17 @@ void listen<string[]>("open-paths", (event) => void openPaths(event.payload));
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 
 async function init(): Promise<void> {
-  setEmpty(true);
-  updateInfo();
-  extensions = await invoke<string[]>("image_extensions");
-  await library.load();
+  await loadSettings();
+  document.documentElement.style.setProperty("--sidebar", `${settings.sidebarWidth}px`);
+  gallery.applySettings();
+  setMode("browser");
+  [extensions] = await Promise.all([invoke<string[]>("image_extensions"), library.load(), tree.load()]);
+
   const launch = await invoke<string[]>("take_launch_paths");
-  if (launch.length) await openPaths(launch);
+  if (launch.length) return openPaths(launch);
+  const last = library.recentFirst;
+  if (settings.startup === "last" && last?.exists) return navigate(last.path);
+  gallery.showEmpty();
 }
 
 void init();

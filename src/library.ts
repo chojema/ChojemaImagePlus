@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { samePath } from "./common";
 import { t } from "./i18n";
 
 export interface FolderItem {
@@ -25,14 +26,6 @@ const ICONS = {
   star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z" />',
 };
 
-const isWindows = navigator.userAgent.includes("Windows");
-
-function samePath(a: string, b: string): boolean {
-  if (!isWindows) return a === b;
-  const norm = (p: string) => p.replace(/\//g, "\\").toLowerCase();
-  return norm(a) === norm(b);
-}
-
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -53,18 +46,20 @@ function iconButton(icon: keyof typeof ICONS, title: string, onClick: () => void
   return button;
 }
 
-/** Favorite and recent folders, shown in the bottom-bar panel and on the empty screen. */
+/** Favorite and recent folders, shown in the sidebar and in the viewer's pop-up panel. */
 export class Library {
   private data: Snapshot = { favorites: [], recent: [] };
   private editing: string | null = null;
+  private editIn: HTMLElement | null = null;
+  private active: string | null = null;
   private readonly containers: HTMLElement[];
 
   constructor(
+    sidebar: HTMLElement,
     private readonly panel: HTMLElement,
-    emptyLists: HTMLElement,
     private readonly hooks: Hooks,
   ) {
-    this.containers = [panel, emptyLists];
+    this.containers = [sidebar, panel];
     document.addEventListener("pointerdown", (e) => {
       if (this.panel.hidden) return;
       const target = e.target as Node;
@@ -74,6 +69,15 @@ export class Library {
 
   async load(): Promise<void> {
     this.set(await invoke<Snapshot>("library_get"));
+  }
+
+  get recentFirst(): FolderItem | undefined {
+    return this.data.recent[0];
+  }
+
+  setActive(path: string | null): void {
+    this.active = path;
+    this.render();
   }
 
   get isOpen(): boolean {
@@ -133,34 +137,35 @@ export class Library {
 
   private render(): void {
     for (const container of this.containers) {
-      container.replaceChildren(...this.sections(container === this.panel));
+      container.replaceChildren(...this.sections(container));
     }
   }
 
-  private sections(inPanel: boolean): HTMLElement[] {
+  private sections(container: HTMLElement): HTMLElement[] {
     const favorites = el("section");
-    const head = el("h3", "", t.favorites);
-    favorites.append(head);
+    favorites.append(el("h3", "", t.favorites));
     if (!this.data.favorites.length) {
-      if (!inPanel) return this.data.recent.length ? [this.recentSection(inPanel)] : [];
       favorites.append(el("p", "hint", t.noFavorites));
     } else {
       const list = el("ul");
-      this.data.favorites.forEach((item, i) => list.append(this.favoriteRow(item, i, inPanel)));
+      this.data.favorites.forEach((item, i) => list.append(this.favoriteRow(item, i, container)));
       favorites.append(list);
     }
-    const result = [favorites];
-    if (this.data.recent.length || inPanel) result.push(this.recentSection(inPanel));
-    return result;
+    return [favorites, this.recentSection()];
   }
 
-  private favoriteRow(item: FolderItem, index: number, inPanel: boolean): HTMLLIElement {
-    const row = el("li", item.exists ? "" : "missing");
+  private rowClass(item: FolderItem): string {
+    return [item.exists ? "" : "missing", samePath(item.path, this.active) ? "active" : ""].join(" ").trim();
+  }
+
+  private favoriteRow(item: FolderItem, index: number, container: HTMLElement): HTMLLIElement {
+    const editing = this.editing === item.path && this.editIn === container;
+    const row = el("li", this.rowClass(item));
     row.title = item.path;
     const key = el("span", "key", index < 9 ? String(index + 1) : "");
     const text = el("span", "text");
 
-    if (inPanel && this.editing === item.path) {
+    if (editing) {
       const input = el("input");
       input.value = item.name;
       input.spellcheck = false;
@@ -186,12 +191,13 @@ export class Library {
     }
     row.append(key, text);
 
-    if (inPanel && this.editing !== item.path) {
+    if (!editing) {
       const last = this.data.favorites.length - 1;
       const actions = el("span", "actions");
       actions.append(
         iconButton("rename", t.rename, () => {
           this.editing = item.path;
+          this.editIn = container;
           this.render();
         }),
       );
@@ -206,10 +212,10 @@ export class Library {
     return row;
   }
 
-  private recentSection(inPanel: boolean): HTMLElement {
+  private recentSection(): HTMLElement {
     const section = el("section");
     const head = el("h3", "", t.recent);
-    if (inPanel && this.data.recent.length) {
+    if (this.data.recent.length) {
       const clear = el("button", "link", t.clear);
       clear.type = "button";
       clear.addEventListener("click", () => void this.call("recent_clear", {}));
@@ -222,12 +228,12 @@ export class Library {
     }
     const list = el("ul");
     for (const item of this.data.recent) {
-      const row = el("li", item.exists ? "" : "missing");
+      const row = el("li", this.rowClass(item));
       row.title = item.path;
       const text = el("span", "text");
       text.append(el("span", "name", item.name), el("span", "path", item.exists ? item.path : `${t.missing} · ${item.path}`));
       row.append(el("span", "key"), text);
-      if (inPanel && !this.isFavorite(item.path)) {
+      if (!this.isFavorite(item.path)) {
         const actions = el("span", "actions");
         actions.append(iconButton("star", t.addFavorite, () => void this.toggle(item.path)));
         row.append(actions);

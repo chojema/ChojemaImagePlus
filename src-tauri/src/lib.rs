@@ -1,12 +1,18 @@
 mod files;
+mod folders;
 mod library;
 mod protocol;
+mod settings;
+mod thumbs;
 #[cfg(windows)]
 mod wic;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use library::{Library, Snapshot};
+use serde_json::{Map, Value};
+use settings::Settings;
+use thumbs::Thumbs;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Default)]
@@ -69,6 +75,56 @@ async fn open_paths(
 }
 
 #[tauri::command]
+async fn browse(dir: String, library: tauri::State<'_, Library>) -> Result<Vec<files::Entry>, String> {
+    let path = PathBuf::from(&dir);
+    let entries = tauri::async_runtime::spawn_blocking(move || files::scan(&path))
+        .await
+        .map_err(|_| "failed".to_string())??;
+    library.touch_recent(&dir);
+    Ok(entries)
+}
+
+#[tauri::command]
+async fn folder_children(path: String) -> Result<Vec<folders::Folder>, String> {
+    tauri::async_runtime::spawn_blocking(move || folders::children(Path::new(&path)))
+        .await
+        .map_err(|_| "failed".to_string())?
+}
+
+#[tauri::command]
+async fn folder_roots(app: AppHandle) -> Result<folders::Roots, String> {
+    let p = app.path();
+    let places: Vec<(PathBuf, String)> = [
+        (p.picture_dir(), "pictures"),
+        (p.desktop_dir(), "desktop"),
+        (p.download_dir(), "downloads"),
+        (p.home_dir(), "home"),
+    ]
+    .into_iter()
+    .filter_map(|(dir, key)| dir.ok().map(|d| (d, key.to_string())))
+    .collect();
+    tauri::async_runtime::spawn_blocking(move || folders::roots(places))
+        .await
+        .map_err(|_| "failed".to_string())
+}
+
+#[tauri::command]
+fn settings_get(settings: tauri::State<Settings>) -> Map<String, Value> {
+    settings.all()
+}
+
+#[tauri::command]
+fn settings_set(values: Map<String, Value>, settings: tauri::State<Settings>) -> Map<String, Value> {
+    settings.update(values)
+}
+
+#[tauri::command]
+async fn thumbs_clear(thumbs: tauri::State<'_, Thumbs>) -> Result<(), String> {
+    thumbs.clear();
+    Ok(())
+}
+
+#[tauri::command]
 fn library_get(library: tauri::State<Library>) -> Snapshot {
     library.snapshot()
 }
@@ -116,9 +172,21 @@ pub fn run() {
                 responder.respond(protocol::handle(&request));
             });
         })
+        .register_asynchronous_uri_scheme_protocol("thumb", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let thumbs = app.state::<Thumbs>();
+                responder.respond(protocol::thumbnail(&request, &thumbs));
+            });
+        })
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
-            app.manage(Library::load(dir));
+            app.manage(Library::load(dir.clone()));
+            app.manage(Settings::load(dir));
+            let thumbs = Thumbs::new(app.path().app_cache_dir()?.join("thumbnails"));
+            app.manage(thumbs);
+            let handle = app.handle().clone();
+            std::thread::spawn(move || handle.state::<Thumbs>().trim());
             let cwd = std::env::current_dir().unwrap_or_default();
             let args: Vec<String> = std::env::args().collect();
             deliver(app.handle(), paths_from_args(&args, &cwd));
@@ -133,7 +201,13 @@ pub fn run() {
             favorite_remove,
             favorite_rename,
             favorite_move,
-            recent_clear
+            recent_clear,
+            browse,
+            folder_children,
+            folder_roots,
+            settings_get,
+            settings_set,
+            thumbs_clear
         ])
         .build(tauri::generate_context!())
         .expect("failed to build application");

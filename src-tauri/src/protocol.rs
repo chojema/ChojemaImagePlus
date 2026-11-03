@@ -1,4 +1,5 @@
 use crate::files::{self, Kind};
+use crate::thumbs::Thumbs;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder};
 use percent_encoding::percent_decode_str;
@@ -6,25 +7,45 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::http::{header, Request, Response, StatusCode};
 
-pub fn handle(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+fn request_path(request: &Request<Vec<u8>>) -> Option<PathBuf> {
     let raw = request.uri().path().trim_start_matches('/');
-    let Ok(decoded) = percent_decode_str(raw).decode_utf8() else {
+    let decoded = percent_decode_str(raw).decode_utf8().ok()?;
+    Some(PathBuf::from(decoded.as_ref()))
+}
+
+fn ok(body: Vec<u8>, mime: &str) -> Response<Vec<u8>> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .body(body)
+        .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// Full image: served as-is when the web view can display it, otherwise decoded to PNG.
+pub fn handle(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let Some(path) = request_path(request) else {
         return status(StatusCode::BAD_REQUEST);
     };
-    let path = PathBuf::from(decoded.as_ref());
-
     let result = match files::kind(&path) {
         None => return status(StatusCode::FORBIDDEN),
         Some(Kind::Native) => fs::read(&path).map(|b| (b, files::mime(&path))).ok(),
         Some(Kind::Decoded) => decode(&path).map(|b| (b, "image/png")),
     };
-
     match result {
-        Some((body, mime)) => Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, mime)
-            .body(body)
-            .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR)),
+        Some((body, mime)) => ok(body, mime),
+        None => status(StatusCode::NOT_FOUND),
+    }
+}
+
+pub fn thumbnail(request: &Request<Vec<u8>>, thumbs: &Thumbs) -> Response<Vec<u8>> {
+    let Some(path) = request_path(request) else {
+        return status(StatusCode::BAD_REQUEST);
+    };
+    if files::kind(&path).is_none() {
+        return status(StatusCode::FORBIDDEN);
+    }
+    match thumbs.get(&path) {
+        Some((body, mime)) => ok(body, mime),
         None => status(StatusCode::NOT_FOUND),
     }
 }

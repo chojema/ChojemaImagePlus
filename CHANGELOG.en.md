@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- List view: folder tree on the left (favorites, recent folders, locations) and thumbnails on the right
+- Thumbnail sorting (name, date modified, size), size control, and multi-selection
+- Double-click or Enter to view large, Esc to return, and browse only the selected images
+- Settings: screen shown when the app opens (last folder / empty screen), delete stored thumbnails
+- Thumbnails are stored so folders open faster the next time
+
 ## 0.2.0
 
 - Favorite folders: add or remove the current folder (Ctrl/⌘ + D), rename, reorder, open 1–9 directly (Ctrl/⌘ + 1–9)

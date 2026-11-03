@@ -118,7 +118,7 @@ fn sort(entries: &mut [Entry]) {
     entries.sort_by(|a, b| natural_cmp(&a.name, &b.name).then_with(|| a.name.cmp(&b.name)));
 }
 
-fn scan(dir: &Path) -> Result<Vec<Entry>, String> {
+pub fn scan(dir: &Path) -> Result<Vec<Entry>, String> {
     let read = fs::read_dir(dir).map_err(|_| "not_found".to_string())?;
     let mut entries: Vec<Entry> = read
         .filter_map(|e| e.ok())
