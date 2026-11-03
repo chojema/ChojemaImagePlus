@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.1
+
+- Fixed the thumbnail list freezing the whole app (empty boxes) after scrolling quickly to the end: visible cells are made first, and requests wait until scrolling stops
+- Fixed stray text in the count badge while dragging photos
+
 ## 0.12.0
 
 - About window: version, copyright, license, and links to the GitHub repository, Chojema App Park, and open-source licenses (macOS app menu or the ⓘ button in the sidebar)

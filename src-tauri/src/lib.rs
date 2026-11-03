@@ -138,11 +138,8 @@ fn watch_folders(folders: Vec<String>, watch: tauri::State<watch::FolderWatch>) 
 }
 
 #[tauri::command]
-fn thumbs_prefetch(app: AppHandle, paths: Vec<String>) {
-    std::thread::spawn(move || {
-        let paths = paths.into_iter().map(PathBuf::from).collect();
-        app.state::<Thumbs>().prefetch(paths);
-    });
+fn thumbs_prefetch(paths: Vec<String>, thumbs: tauri::State<Thumbs>) {
+    thumbs.prefetch(paths.into_iter().map(PathBuf::from).collect());
 }
 
 #[tauri::command]
@@ -346,9 +343,10 @@ pub fn run() {
         })
         .register_asynchronous_uri_scheme_protocol("thumb", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
+            // Only the cache lookup runs here; rendering happens on the thumbnail workers, so
+            // this blocking thread is free again at once.
             tauri::async_runtime::spawn_blocking(move || {
-                let thumbs = app.state::<Thumbs>();
-                responder.respond(protocol::thumbnail(&request, &thumbs));
+                protocol::thumbnail(&request, &app.state::<Thumbs>(), responder);
             });
         })
         .setup(|app| {

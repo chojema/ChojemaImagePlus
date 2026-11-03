@@ -6,6 +6,7 @@ use percent_encoding::percent_decode_str;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::http::{header, Request, Response, StatusCode};
+use tauri::UriSchemeResponder;
 
 fn request_path(request: &Request<Vec<u8>>) -> Option<PathBuf> {
     let raw = request.uri().path().trim_start_matches('/');
@@ -37,17 +38,23 @@ pub fn handle(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     }
 }
 
-pub fn thumbnail(request: &Request<Vec<u8>>, thumbs: &Thumbs) -> Response<Vec<u8>> {
+/// Answers from the cache at once, or queues the thumbnail and answers once a worker has it.
+pub fn thumbnail(request: &Request<Vec<u8>>, thumbs: &Thumbs, responder: UriSchemeResponder) {
     let Some(path) = request_path(request) else {
-        return status(StatusCode::BAD_REQUEST);
+        return responder.respond(status(StatusCode::BAD_REQUEST));
     };
     if files::kind(&path).is_none() {
-        return status(StatusCode::FORBIDDEN);
+        return responder.respond(status(StatusCode::FORBIDDEN));
     }
-    match thumbs.get(&path) {
-        Some((body, mime)) => ok(body, mime),
-        None => status(StatusCode::NOT_FOUND),
-    }
+    thumbs.request(
+        path,
+        Box::new(move |result| {
+            responder.respond(match result {
+                Some((body, mime)) => ok(body, mime),
+                None => status(StatusCode::NOT_FOUND),
+            })
+        }),
+    );
 }
 
 fn decode(path: &Path) -> Option<Vec<u8>> {

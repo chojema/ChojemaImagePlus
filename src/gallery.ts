@@ -41,6 +41,10 @@ export class Gallery {
   private readonly cells = new Map<number, HTMLElement>();
   private metrics = { cols: 1, cellW: 0, cellH: 0, rowH: 0, pad: 10, gap: 6 };
   private frame = 0;
+  /** Cells made while scrolling fast wait here; their thumbnails are requested once scrolling settles. */
+  private readonly unloaded = new Map<HTMLImageElement, Entry>();
+  private lastScroll = 0;
+  private settleTimer = 0;
 
   readonly root: HTMLElement;
   private readonly grid: HTMLElement;
@@ -117,7 +121,14 @@ export class Gallery {
 
     this.canvas.className = "grid-canvas";
     this.grid.append(this.canvas);
-    this.grid.addEventListener("scroll", () => this.schedule(), { passive: true });
+    this.grid.addEventListener(
+      "scroll",
+      () => {
+        this.lastScroll = performance.now();
+        this.schedule();
+      },
+      { passive: true },
+    );
     new ResizeObserver(() => this.relayout()).observe(this.grid);
     this.bindDrag();
     this.grid.addEventListener("click", (e) => {
@@ -370,8 +381,25 @@ export class Gallery {
 
     for (const cell of this.cells.values()) cell.remove();
     this.cells.clear();
+    this.unloaded.clear();
     this.relayout();
     this.paintSelection();
+  }
+
+  /** Requests thumbnails for cells still on the page; while the list is moving, waits until it stops. */
+  private loadThumbs(): void {
+    if (!this.unloaded.size) return;
+    const SETTLE = 120;
+    const wait = this.lastScroll + SETTLE - performance.now();
+    if (wait > 0) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = window.setTimeout(() => this.loadThumbs(), wait);
+      return;
+    }
+    for (const [img, entry] of this.unloaded) {
+      if (img.isConnected) img.src = this.thumbSrc(entry);
+    }
+    this.unloaded.clear();
   }
 
   // Virtual scrolling: only the rows in view (plus a margin) exist as elements, so a folder
@@ -422,6 +450,7 @@ export class Gallery {
     if (!this.entries.length || !m.rowH) {
       for (const cell of this.cells.values()) cell.remove();
       this.cells.clear();
+      this.unloaded.clear();
       return;
     }
     const overscan = 2;
@@ -434,6 +463,8 @@ export class Gallery {
       if (i < first || i > last) {
         cell.remove();
         this.cells.delete(i);
+        const img = cell.querySelector("img");
+        if (img) this.unloaded.delete(img);
       }
     }
     const fragment = document.createDocumentFragment();
@@ -445,6 +476,7 @@ export class Gallery {
       fragment.append(cell);
     }
     this.canvas.append(fragment);
+    this.loadThumbs();
   }
 
   private makeCell(i: number): HTMLElement {
@@ -461,7 +493,7 @@ export class Gallery {
     img.decoding = "async";
     img.draggable = false;
     img.alt = "";
-    img.src = this.thumbSrc(entry);
+    this.unloaded.set(img, entry);
     img.addEventListener("error", () => frame.classList.add("broken"), { once: true });
     frame.append(img);
     const name = document.createElement("span");
@@ -699,7 +731,6 @@ export class Gallery {
         document.body.classList.add("dragging-files");
       }
       ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 12}px)`;
-      (ghost.querySelector("span") as HTMLElement).textContent = `${e.clientX},${e.clientY} ${document.elementFromPoint(e.clientX, e.clientY)?.className}`;
       const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-drop]") ?? null;
       setTarget(hit && !samePath(hit.dataset.drop, this.folder) ? hit : null);
     });
