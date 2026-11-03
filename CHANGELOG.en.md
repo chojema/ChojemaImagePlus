@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- Move to Trash: trash button, Delete key (⌘ + Backspace on macOS), or right-click menu, after confirmation; pair files can go along
+- In the image view, trash the current image and continue with the next one
+- Right-click menu: view, compare side by side, move or copy, show in Finder (File Explorer), move to Trash
+
 ## 0.6.1
 
 - Move/copy failures now explain the reason (access denied, not enough space, file in use, …), with a button to open Privacy settings for permission problems

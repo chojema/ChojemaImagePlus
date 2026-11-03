@@ -165,6 +165,38 @@ export class Transfer {
     if (outcome.failed.length) await this.reportFailures(outcome.failed);
   }
 
+  /** Sends images (and, if chosen, their pair files) to the trash. Resolves with the images trashed. */
+  async trash(paths: string[]): Promise<string[]> {
+    if (this.busy || !paths.length) return [];
+    const plan = await invoke<{ pairs: string[] }>("trash_plan", { sources: paths });
+    const answer = await ask({
+      title: t.trashTitle(paths.length),
+      message: paths.length === 1 ? `${baseName(paths[0])}\n\n${t.trashMessage}` : t.trashMessage,
+      checkbox: plan.pairs.length ? { label: t.includePairs(plan.pairs.length), checked: settings.includePairs } : undefined,
+      choices: [
+        { id: "trash", label: t.toTrash, primary: true },
+        { id: "cancel", label: t.cancel },
+      ],
+      cancel: "cancel",
+    });
+    if (answer.choice !== "trash") return [];
+    if (plan.pairs.length && answer.checked !== settings.includePairs) saveSettings({ includePairs: answer.checked });
+    const targets = plan.pairs.length && answer.checked ? [...paths, ...plan.pairs] : paths;
+    this.busy = true;
+    let outcome: Outcome;
+    try {
+      outcome = await invoke<Outcome>("trash_files", { paths: targets });
+    } finally {
+      this.busy = false;
+    }
+    const trashed = new Set(outcome.done.map((d) => d.from));
+    const images = paths.filter((p) => trashed.has(p));
+    if (outcome.done.length) showToast(t.trashed(outcome.done.length));
+    this.refresh();
+    if (outcome.failed.length) await this.reportFailures(outcome.failed);
+    return images;
+  }
+
   async undo(): Promise<void> {
     if (this.busy) return;
     const last = this.last;

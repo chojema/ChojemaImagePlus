@@ -2,6 +2,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { $, Entry, formatSize, parentOf, samePath } from "./common";
 import { errorText, t } from "./i18n";
 import { MAX_COMPARE } from "./compare";
+import { showMenu } from "./menu";
 import { saveSettings, settings, SortKey } from "./settings";
 
 interface Hooks {
@@ -10,6 +11,8 @@ interface Hooks {
   compare: (entries: Entry[]) => void;
   /** `dest` null asks for the destination folder. */
   transfer: (paths: string[], dest: string | null) => void;
+  trash: (paths: string[]) => void;
+  reveal: (path: string) => void;
   favorite: () => void;
   chooseFolder: () => void;
   chooseFile: () => void;
@@ -84,6 +87,7 @@ export class Gallery {
       up: t.up,
       "sort-dir": t.sortDir,
       transfer: t.transfer,
+      trash: t.trash,
       compare: t.compare,
       favorite: t.favoriteToggle,
       refresh: t.refresh,
@@ -116,6 +120,27 @@ export class Gallery {
         return;
       }
       this.clickCell(Number(cell.dataset.index), e);
+    });
+    this.grid.addEventListener("contextmenu", (e) => {
+      const cell = (e.target as Element).closest<HTMLElement>(".cell");
+      if (!cell) return;
+      e.preventDefault();
+      const i = Number(cell.dataset.index);
+      if (!this.selected.has(i)) {
+        this.focus = i;
+        this.anchor = i;
+        this.select(new Set([i]));
+      }
+      const paths = this.selectedPaths();
+      const n = paths.length;
+      showMenu(e.clientX, e.clientY, [
+        { label: t.menuOpen, run: () => this.openAt(i) },
+        { label: t.menuCompare, run: () => this.compareSelection(), disabled: n < 2 || n > MAX_COMPARE },
+        { label: t.menuTransfer, run: () => this.hooks.transfer(paths, null) },
+        { label: t.menuReveal, run: () => this.hooks.reveal(this.entries[i].path) },
+        "separator",
+        { label: t.menuTrash, run: () => this.hooks.trash(paths), danger: true },
+      ]);
     });
     this.grid.addEventListener("dblclick", (e) => {
       const cell = (e.target as Element).closest<HTMLElement>(".cell");
@@ -175,6 +200,11 @@ export class Gallery {
       case "compare":
         this.compareSelection();
         break;
+      case "trash": {
+        const paths = this.selectedPaths();
+        if (paths.length) this.hooks.trash(paths);
+        break;
+      }
       case "transfer": {
         const paths = this.selectedPaths();
         if (!paths.length) this.hooks.toast(t.transferNeed);
@@ -417,6 +447,11 @@ export class Gallery {
 
   handleKey(e: KeyboardEvent): boolean {
     const mod = e.ctrlKey || e.metaKey;
+    if (e.code === "Delete" || (e.metaKey && e.code === "Backspace")) {
+      e.preventDefault();
+      this.command("trash");
+      return true;
+    }
     if (mod && e.code === "KeyA") {
       e.preventDefault();
       this.select(this.range(0, this.entries.length - 1));

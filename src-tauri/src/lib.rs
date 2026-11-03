@@ -155,6 +155,34 @@ async fn transfer_run(
     .map_err(|_| "failed".to_string())
 }
 
+#[tauri::command]
+async fn trash_plan(sources: Vec<String>) -> Result<transfer::TrashPlan, String> {
+    tauri::async_runtime::spawn_blocking(move || transfer::trash_plan(&sources))
+        .await
+        .map_err(|_| "failed".to_string())
+}
+
+#[tauri::command]
+async fn trash_files(paths: Vec<String>) -> Result<transfer::Outcome, String> {
+    tauri::async_runtime::spawn_blocking(move || transfer::trash_files(&paths))
+        .await
+        .map_err(|_| "failed".to_string())
+}
+
+/// Shows the file selected in Finder or File Explorer.
+#[tauri::command]
+fn reveal(path: String) {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("/usr/bin/open").arg("-R").arg(&path).spawn();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer.exe")
+            .raw_arg(format!("/select,\"{}\"", path.replace('/', "\\")))
+            .spawn();
+    }
+}
+
 /// Opens the system privacy settings where file access for the app is granted.
 #[tauri::command]
 fn open_privacy_settings() {
@@ -267,7 +295,10 @@ pub fn run() {
             transfer_run,
             transfer_cancel,
             transfer_undo,
-            open_privacy_settings
+            open_privacy_settings,
+            trash_plan,
+            trash_files,
+            reveal
         ])
         .build(tauri::generate_context!())
         .expect("failed to build application");

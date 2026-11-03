@@ -87,7 +87,7 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 
 /// Files sharing the image's base name: RAW+JPEG pairs, `photo.xmp` or `photo.jpg.xmp`
 /// sidecars, Live Photo videos and similar.
-fn pairs_of(image: &Path) -> Vec<PathBuf> {
+pub fn pairs_of(image: &Path) -> Vec<PathBuf> {
     let (Some(dir), Some(stem), Some(full)) = (
         image.parent(),
         image.file_stem().map(|s| s.to_string_lossy().to_lowercase()),
@@ -181,7 +181,7 @@ fn renamed_group(dir: &Path, names: &[String]) -> Vec<String> {
 }
 
 /// A short reason code the interface turns into a localized explanation.
-fn reason(err: &io::Error) -> String {
+pub fn reason(err: &io::Error) -> String {
     use io::ErrorKind::*;
     let code = match err.kind() {
         PermissionDenied => "permission",
@@ -363,9 +363,58 @@ pub fn undo(mode: Mode, items: &[Done]) -> Outcome {
     outcome
 }
 
+#[derive(Serialize)]
+pub struct TrashPlan {
+    pub pairs: Vec<String>,
+}
+
+/// Pair files that would go to the trash along with the given images.
+pub fn trash_plan(sources: &[String]) -> TrashPlan {
+    let selected: HashSet<PathBuf> = sources.iter().map(PathBuf::from).collect();
+    let mut seen = HashSet::new();
+    let pairs = sources
+        .iter()
+        .flat_map(|s| pairs_of(Path::new(s)))
+        .filter(|p| !selected.contains(p) && seen.insert(p.clone()))
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    TrashPlan { pairs }
+}
+
+/// Moves files to the trash. `done` lists what was trashed (with `to` left empty).
+pub fn trash_files(paths: &[String]) -> Outcome {
+    let mut outcome = Outcome { done: Vec::new(), skipped: 0, failed: Vec::new(), overwritten: 0, cancelled: false };
+    for p in paths {
+        let path = Path::new(p);
+        if in_package(path) {
+            outcome.failed.push(Failure { src: p.clone(), error: "protected".into() });
+            continue;
+        }
+        match to_trash(path) {
+            Ok(()) => outcome.done.push(Done { from: p.clone(), to: String::new() }),
+            Err(e) => outcome.failed.push(Failure { src: p.clone(), error: reason(&e) }),
+        }
+    }
+    outcome
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trash_plan_lists_unselected_pairs() {
+        let (base, a, _b) = setup("trashplan");
+        for f in ["P.jpg", "P.CR3", "P.jpg.xmp", "Q.jpg"] {
+            fs::write(a.join(f), f).unwrap();
+        }
+        let s = |n: &str| a.join(n).to_string_lossy().into_owned();
+        let mut pairs = trash_plan(&[s("P.jpg")]).pairs;
+        pairs.sort();
+        assert_eq!(pairs, [s("P.CR3"), s("P.jpg.xmp")]);
+        assert_eq!(trash_plan(&[s("P.jpg"), s("P.CR3")]).pairs, [s("P.jpg.xmp")]);
+        let _ = fs::remove_dir_all(base);
+    }
 
     #[test]
     fn reasons_are_classified() {

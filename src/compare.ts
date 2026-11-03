@@ -1,5 +1,4 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { $, Entry, formatSize, isFullscreen, showToast, toggleFullscreen } from "./common";
+import { $, Entry, formatSize, isFullscreen, setWindowTitle, showToast, toggleFullscreen } from "./common";
 import { t } from "./i18n";
 import { View } from "./view";
 import { imageSrc } from "./viewer";
@@ -81,7 +80,7 @@ export class Compare {
   }
 
   private updateTitle(): void {
-    void getCurrentWindow().setTitle(`${this.panes.map((p) => p.entry.name).join(" · ")} - Chojema Image+`);
+    setWindowTitle(`${this.panes.map((p) => p.entry.name).join(" · ")} - Chojema Image+`);
   }
 
   close(): void {

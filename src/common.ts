@@ -69,3 +69,9 @@ export async function toggleFullscreen(force?: boolean): Promise<void> {
   await win.setFullscreen(next);
   document.body.classList.toggle("fullscreen", next);
 }
+
+// Title updates are chained so quick successive changes cannot arrive out of order.
+let titleChain: Promise<void> = Promise.resolve();
+export function setWindowTitle(text: string): void {
+  titleChain = titleChain.then(() => getCurrentWindow().setTitle(text)).catch(() => {});
+}

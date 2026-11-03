@@ -22,6 +22,8 @@ A lightweight, fast image viewer for Windows and macOS.
 - **Dual pane** (F6): split the list into two panes, side by side or top and bottom, to work with two folders at once.
   - Drag thumbnails from one pane to the other, or press M, to move or copy them to the other pane's folder.
   - Switch panes with Tab; the folder tree and favorites open in the active pane (blue underline).
+- **Move to Trash**: send selected images to the Trash (Recycle Bin on Windows) with the trash button, the Delete key (⌘ + Backspace on macOS), or the right-click menu. Pair files can go along; in the image view the next image is shown afterwards.
+- **Right-click menu**: view, compare side by side, move or copy to another folder, show in Finder (File Explorer), move to Trash
 - Favorite folders (add, remove, rename, reorder) and a recent folders list
 - Drag and drop, open several files at once, image file associations (open with a double-click)
 - Settings: screen shown when the app opens (last folder / empty screen), delete stored thumbnails
@@ -63,6 +65,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Move or copy selected images to another folder | M (to the other pane in dual mode), drag onto a folder |
 | Dual pane on/off / switch pane | F6 / Tab |
 | Undo the last move or copy | Ctrl (⌘) + Z |
+| Move selected images to the Trash | Delete, ⌘ + Backspace (macOS) |
 | Parent folder | Backspace, Alt + ↑ |
 | Refresh | F5 |
 | Hide or show sidebar | Ctrl (⌘) + B |
@@ -73,6 +76,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Action | Keys |
 |---|---|
 | Back to list | Esc |
+| Move the current image to the Trash | Delete, ⌘ + Backspace (macOS) |
 | Next / previous image | → ↓ PageDown Space / ← ↑ PageUp Backspace |
 | First / last image | Home / End |
 | Zoom in / out | + / - , Ctrl (⌘) + wheel, trackpad pinch |

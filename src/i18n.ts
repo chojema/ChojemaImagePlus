@@ -1,3 +1,9 @@
+function isMacLike(): boolean {
+  return !navigator.userAgent.includes("Windows");
+}
+
+const BIN = isMacLike() ? "Trash" : "Recycle Bin";
+
 const ko = {
   emptyText: "왼쪽에서 폴더를 고르거나, 이미지를 끌어다 놓거나, 파일·폴더를 여세요.",
   folderEmpty: "이 폴더에는 이미지가 없습니다.",
@@ -100,6 +106,7 @@ const ko = {
   protectedDest: "사진 앱 보관함 같은 패키지 안으로는 옮기거나 복사할 수 없습니다.",
   copyOnly: "사진 앱 보관함 안의 파일은 보관함이 손상되지 않도록 복사만 할 수 있습니다.",
   failReason: {
+    protected: "사진 앱 보관함 같은 패키지 안의 파일입니다",
     permission: "접근 권한이 없습니다",
     not_found: "파일을 찾을 수 없습니다",
     exists: "같은 이름의 파일이 있습니다",
@@ -110,6 +117,16 @@ const ko = {
   permissionHintMac: "macOS가 이 위치의 접근을 막았습니다. 시스템 설정 → 개인정보 보호 및 보안 → ‘파일 및 폴더’ 또는 ‘전체 디스크 접근 권한’에서 Chojema Image+를 허용한 뒤 다시 시도하세요.",
   permissionHintWindows: "Windows가 이 위치의 접근을 막았습니다. 파일이 다른 프로그램에서 열려 있지 않은지, 폴더에 쓰기 권한이 있는지 확인하세요.",
   openPrivacy: "개인정보 보호 설정 열기",
+  trash: "휴지통으로 이동 (Delete)",
+  trashTitle: (n: number) => (n === 1 ? "이미지를 휴지통으로 이동할까요?" : `이미지 ${n}개를 휴지통으로 이동할까요?`),
+  trashMessage: "휴지통에서 다시 꺼낼 수 있습니다.",
+  toTrash: "휴지통으로 이동",
+  trashed: (n: number) => `${n}개를 휴지통으로 보냈습니다.`,
+  menuOpen: "크게 보기",
+  menuCompare: "나란히 비교",
+  menuTransfer: "다른 폴더로 이동·복사…",
+  menuReveal: isMacLike() ? "Finder에서 보기" : "탐색기에서 보기",
+  menuTrash: "휴지통으로 이동",
 };
 
 const en: typeof ko = {
@@ -214,6 +231,7 @@ const en: typeof ko = {
   protectedDest: "Files cannot be moved or copied into a package such as a Photos library.",
   copyOnly: "Files inside a Photos library can only be copied, so the library is not damaged.",
   failReason: {
+    protected: "the file is inside a package such as a Photos library",
     permission: "access denied",
     not_found: "file not found",
     exists: "a file with the same name exists",
@@ -224,6 +242,16 @@ const en: typeof ko = {
   permissionHintMac: "macOS blocked access to this location. Allow Chojema Image+ in System Settings → Privacy & Security → Files and Folders or Full Disk Access, then try again.",
   permissionHintWindows: "Windows blocked access to this location. Make sure the file is not open in another program and that you can write to the folder.",
   openPrivacy: "Open Privacy Settings",
+  trash: `Move to ${BIN} (Delete)`,
+  trashTitle: (n: number) => (n === 1 ? `Move this image to the ${BIN}?` : `Move ${n} images to the ${BIN}?`),
+  trashMessage: `You can restore them from the ${BIN}.`,
+  toTrash: `Move to ${BIN}`,
+  trashed: (n: number) => `Moved ${n} to the ${BIN}.`,
+  menuOpen: "View",
+  menuCompare: "Compare side by side",
+  menuTransfer: "Move or copy to another folder…",
+  menuReveal: isMacLike() ? "Show in Finder" : "Show in File Explorer",
+  menuTrash: `Move to ${BIN}`,
 };
 
 export const isKorean = navigator.language.toLowerCase().startsWith("ko");

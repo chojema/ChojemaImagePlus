@@ -1,7 +1,8 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { $, Entry, formatSize, isFullscreen, isWindows, showToast, toggleFullscreen } from "./common";
+import { $, Entry, formatSize, isFullscreen, isWindows, setWindowTitle, showToast, toggleFullscreen } from "./common";
 import { t } from "./i18n";
+import { showMenu } from "./menu";
 import { View } from "./view";
 
 const APP_NAME = "Chojema Image+";
@@ -62,7 +63,13 @@ export class Viewer {
 
   readonly actions: Record<string, () => void>;
 
-  constructor(hooks: { back: () => void; favorite: () => void; folders: () => void }) {
+  constructor(hooks: {
+    back: () => void;
+    favorite: () => void;
+    folders: () => void;
+    trash: (path: string) => void;
+    reveal: (path: string) => void;
+  }) {
     const v = this.view;
     const loaded = (fn: () => void) => () => {
       if (v.loaded) {
@@ -86,6 +93,9 @@ export class Viewer {
       back: hooks.back,
       favorite: hooks.favorite,
       folders: hooks.folders,
+      trash: () => {
+        if (this.current) hooks.trash(this.current.path);
+      },
     };
 
     const tooltips: Record<string, string> = {
@@ -109,6 +119,16 @@ export class Viewer {
       button.addEventListener("click", () => this.actions[action]?.());
     }
     this.bindPointer();
+    this.stage.addEventListener("contextmenu", (e) => {
+      const entry = this.current;
+      if (!entry) return;
+      e.preventDefault();
+      showMenu(e.clientX, e.clientY, [
+        { label: t.menuReveal, run: () => hooks.reveal(entry.path) },
+        "separator",
+        { label: t.menuTrash, run: () => hooks.trash(entry.path), danger: true },
+      ]);
+    });
 
     new ResizeObserver(() => {
       if (v.loaded) {
@@ -141,6 +161,16 @@ export class Viewer {
     this.show(index);
   }
 
+  /** Drops a file that no longer exists; returns false when nothing is left to show. */
+  remove(path: string): boolean {
+    const i = this.entries.findIndex((e) => e.path === path);
+    if (i < 0) return this.entries.length > 0;
+    this.entries = this.entries.filter((_, j) => j !== i);
+    if (!this.entries.length) return false;
+    this.show(Math.min(i, this.entries.length - 1));
+    return true;
+  }
+
   /** Releases the displayed image when returning to the list. */
   close(): void {
     this.loadToken++;
@@ -150,6 +180,11 @@ export class Viewer {
   }
 
   handleKey(e: KeyboardEvent): boolean {
+    if (e.code === "Delete" || (e.metaKey && e.code === "Backspace")) {
+      e.preventDefault();
+      this.actions.trash();
+      return true;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
     let action = keymap[e.code];
     if (e.code === "KeyR" && e.shiftKey) action = "rotate-left";
@@ -178,7 +213,7 @@ export class Viewer {
     this.infoName.textContent = entry.name;
     this.infoDetail.textContent = parts.join("  ·  ");
     this.zoomLabel.textContent = v.loaded ? `${Math.round(v.scale * 100)}%` : "";
-    void this.appWindow.setTitle(`${entry.name} - ${APP_NAME}`);
+    setWindowTitle(`${entry.name} - ${APP_NAME}`);
   }
 
   private showMessage(text: string | null): void {

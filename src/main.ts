@@ -1,13 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import { $, Entry, samePath, showToast } from "./common";
+import { $, Entry, samePath, setWindowTitle, showToast } from "./common";
 import { Compare } from "./compare";
 import { Gallery } from "./gallery";
 import { errorText, t } from "./i18n";
 import { Library } from "./library";
+import { menuOpen } from "./menu";
 import { modalOpen } from "./modal";
 import { Transfer } from "./transfer";
 import { loadSettings, saveSettings, settings, SettingsDialog } from "./settings";
@@ -21,7 +21,6 @@ interface Listing {
 }
 
 const APP_NAME = "Chojema Image+";
-const appWindow = getCurrentWindow();
 let extensions: string[] = [];
 type Mode = "browser" | "viewer" | "compare";
 let mode: Mode = "browser";
@@ -41,6 +40,8 @@ function makePane(): Gallery {
     open: (entries, index) => openViewer(entries, index, pane.folder),
     compare: (entries) => openCompare(entries),
     transfer: (paths, dest) => void startTransfer(paths, dest, pane),
+    trash: (paths) => void transfer.trash(paths),
+    reveal: (path) => void invoke("reveal", { path }),
     favorite: () => toggleFavorite(),
     chooseFolder: () => void chooseFolder(),
     chooseFile: () => void chooseFile(),
@@ -98,16 +99,19 @@ const viewer = new Viewer({
   back: () => back(),
   favorite: () => toggleFavorite(),
   folders: () => library.toggleOpen(),
+  trash: (path) => void trashFromViewer(path),
+  reveal: (path) => void invoke("reveal", { path }),
 });
+
+async function trashFromViewer(path: string): Promise<void> {
+  const done = await transfer.trash([path]);
+  if (done.includes(path) && !viewer.remove(path)) back();
+}
 const transfer = new Transfer(() => panes.forEach((p) => p.folder && p.command("refresh")));
 const compare = new Compare({ back: () => backFromCompare() });
 const settingsDialog = new SettingsDialog();
 
-// Title updates are chained so quick successive changes cannot arrive out of order.
-let titleChain: Promise<void> = Promise.resolve();
-function setTitle(text: string): void {
-  titleChain = titleChain.then(() => appWindow.setTitle(text)).catch(() => {});
-}
+const setTitle = setWindowTitle;
 
 function folderName(path: string): string {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
@@ -253,7 +257,7 @@ function toggleSidebar(): void {
 }
 
 window.addEventListener("keydown", (e) => {
-  if (modalOpen()) return;
+  if (modalOpen() || menuOpen()) return;
   if (settingsDialog.isOpen) {
     if (e.key === "Escape") settingsDialog.close();
     return;
