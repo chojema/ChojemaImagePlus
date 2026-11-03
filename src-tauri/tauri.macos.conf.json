@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "fileAssociations": [
+      {
+        "ext": ["jpg", "jpeg", "jpe", "jfif", "png", "apng", "gif", "webp", "bmp", "ico", "avif", "tif", "tiff", "heic", "heif"],
+        "name": "Image",
+        "role": "Viewer"
+      }
+    ]
+  }
+}

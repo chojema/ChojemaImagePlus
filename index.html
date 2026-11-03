@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chojema Image+</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="stage">
+      <img id="image" alt="" draggable="false" />
+      <section id="empty">
+        <p id="empty-text"></p>
+        <div class="empty-actions">
+          <button id="empty-open-file" type="button"></button>
+          <button id="empty-open-folder" type="button"></button>
+        </div>
+      </section>
+      <p id="message" hidden></p>
+    </main>
+    <footer id="bar">
+      <div class="info">
+        <span id="info-name"></span>
+        <span id="info-detail"></span>
+      </div>
+      <div class="tools">
+        <button data-action="prev" type="button"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg></button>
+        <button data-action="next" type="button"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></svg></button>
+        <span class="sep"></span>
+        <button data-action="zoom-out" type="button"><svg viewBox="0 0 24 24"><path d="M6 12h12" /></svg></button>
+        <button id="zoom-label" data-action="toggle-zoom" type="button" class="label"></button>
+        <button data-action="zoom-in" type="button"><svg viewBox="0 0 24 24"><path d="M6 12h12M12 6v12" /></svg></button>
+        <button data-action="fit" type="button"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg></button>
+        <span class="sep"></span>
+        <button data-action="rotate-left" type="button"><svg viewBox="0 0 24 24"><path d="M4 4v6h6" /><path d="M5.5 15a7 7 0 1 0 1.2-7.4L4 10" /></svg></button>
+        <button data-action="rotate-right" type="button"><svg viewBox="0 0 24 24"><path d="M20 4v6h-6" /><path d="M18.5 15a7 7 0 1 1-1.2-7.4L20 10" /></svg></button>
+        <span class="sep"></span>
+        <button data-action="fullscreen" type="button"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /><rect x="9" y="9" width="6" height="6" /></svg></button>
+        <button data-action="open" type="button"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></button>
+      </div>
+    </footer>
+    <div id="toast" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
