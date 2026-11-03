@@ -24,6 +24,17 @@ export interface Settings {
   ssIndex: boolean;
   ssLoop: boolean;
   ssFullscreen: boolean;
+  exFormat: string;
+  exQuality: number;
+  exResize: "none" | "long" | "percent";
+  exLong: number;
+  exPercent: number;
+  exMeta: "keep" | "strip_gps" | "strip";
+  exBackground: string;
+  exDest: "same" | "sub" | "pane" | "custom";
+  exSubName: string;
+  exCustom: string;
+  exSuffix: string;
 }
 
 const defaults: Settings = {
@@ -46,6 +57,17 @@ const defaults: Settings = {
   ssIndex: false,
   ssLoop: true,
   ssFullscreen: true,
+  exFormat: "jpeg",
+  exQuality: 90,
+  exResize: "none",
+  exLong: 1920,
+  exPercent: 50,
+  exMeta: "keep",
+  exBackground: "#ffffff",
+  exDest: "sub",
+  exSubName: "Export",
+  exCustom: "",
+  exSuffix: "",
 };
 
 export const settings: Settings = { ...defaults };

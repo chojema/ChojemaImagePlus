@@ -216,7 +216,7 @@ export class Transfer {
     }
   }
 
-  private async reportFailures(failed: { src: string; error: string }[]): Promise<void> {
+  async reportFailures(failed: { src: string; error: string }[]): Promise<void> {
     const describe = (code: string) => {
       if (code.startsWith("other:")) return code.slice(6);
       return t.failReason[code] ?? code;

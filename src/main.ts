@@ -4,6 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { $, Entry, parentOf, samePath, setWindowTitle, showToast } from "./common";
 import { Compare } from "./compare";
+import { Exporter } from "./exporter";
 import { Gallery } from "./gallery";
 import { errorText, t } from "./i18n";
 import { Library } from "./library";
@@ -43,6 +44,7 @@ function makePane(): Gallery {
     transfer: (paths, dest) => void startTransfer(paths, dest, pane),
     trash: (paths) => void transfer.trash(paths),
     slideshow: () => void startSlideshow(pane.folder),
+    export: (paths) => void startExport(paths, pane.folder, pane),
     reveal: (path) => void invoke("reveal", { path }),
     favorite: () => toggleFavorite(),
     chooseFolder: () => void chooseFolder(),
@@ -103,6 +105,7 @@ const viewer = new Viewer({
   folders: () => library.toggleOpen(),
   trash: (path) => void trashFromViewer(path),
   reveal: (path) => void invoke("reveal", { path }),
+  export: (path) => void startExport([path], parentOf(path), null),
 });
 
 async function trashFromViewer(path: string): Promise<void> {
@@ -112,6 +115,17 @@ async function trashFromViewer(path: string): Promise<void> {
 const transfer = new Transfer(() => panes.forEach((p) => p.folder && p.command("refresh")));
 const compare = new Compare({ back: () => backFromCompare() });
 const settingsDialog = new SettingsDialog();
+const exporter = new Exporter(
+  (failed) => transfer.reportFailures(failed),
+  () => panes.forEach((p) => p.folder && p.command("refresh")),
+);
+
+function startExport(paths: string[], folder: string | null, from: Gallery | null): void {
+  const source = folder ?? (paths[0] ? parentOf(paths[0]) : null);
+  if (!source) return;
+  const other = panes.length > 1 ? (panes.find((p) => p !== (from ?? active()))?.folder ?? null) : null;
+  void exporter.start(paths, source, other);
+}
 const slideshowDialog = new SlideshowDialog();
 let modeBeforeSlideshow: Mode = "browser";
 const slideshow = new Slideshow((last) => {
@@ -275,7 +289,7 @@ function toggleSidebar(): void {
 }
 
 window.addEventListener("keydown", (e) => {
-  if (modalOpen() || menuOpen() || slideshowDialog.isOpen) return;
+  if (modalOpen() || menuOpen() || slideshowDialog.isOpen || exporter.isOpen) return;
   if (mode === "slideshow") {
     slideshow.handleKey(e);
     return;

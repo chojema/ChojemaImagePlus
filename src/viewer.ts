@@ -69,6 +69,7 @@ export class Viewer {
     folders: () => void;
     trash: (path: string) => void;
     reveal: (path: string) => void;
+    export: (path: string) => void;
   }) {
     const v = this.view;
     const loaded = (fn: () => void) => () => {
@@ -95,6 +96,9 @@ export class Viewer {
       folders: hooks.folders,
       trash: () => {
         if (this.current) hooks.trash(this.current.path);
+      },
+      export: () => {
+        if (this.current) hooks.export(this.current.path);
       },
     };
 
@@ -125,6 +129,7 @@ export class Viewer {
       e.preventDefault();
       showMenu(e.clientX, e.clientY, [
         { label: t.menuReveal, run: () => hooks.reveal(entry.path) },
+        { label: t.menuExport, run: () => hooks.export(entry.path) },
         "separator",
         { label: t.menuTrash, run: () => hooks.trash(entry.path), danger: true },
       ]);
@@ -183,6 +188,11 @@ export class Viewer {
     if (e.code === "Delete" || (e.metaKey && e.code === "Backspace")) {
       e.preventDefault();
       this.actions.trash();
+      return true;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.code === "KeyE") {
+      e.preventDefault();
+      this.actions.export();
       return true;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return false;

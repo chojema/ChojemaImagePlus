@@ -13,6 +13,7 @@ interface Hooks {
   transfer: (paths: string[], dest: string | null) => void;
   trash: (paths: string[]) => void;
   slideshow: () => void;
+  export: (paths: string[]) => void;
   reveal: (path: string) => void;
   favorite: () => void;
   chooseFolder: () => void;
@@ -139,6 +140,7 @@ export class Gallery {
         { label: t.menuOpen, run: () => this.openAt(i) },
         { label: t.menuCompare, run: () => this.compareSelection(), disabled: n < 2 || n > MAX_COMPARE },
         { label: t.menuTransfer, run: () => this.hooks.transfer(paths, null) },
+        { label: t.menuExport, run: () => this.hooks.export(paths) },
         { label: t.menuReveal, run: () => this.hooks.reveal(this.entries[i].path) },
         "separator",
         { label: t.menuTrash, run: () => this.hooks.trash(paths), danger: true },
@@ -455,6 +457,11 @@ export class Gallery {
     if (e.code === "Delete" || (e.metaKey && e.code === "Backspace")) {
       e.preventDefault();
       this.command("trash");
+      return true;
+    }
+    if (mod && e.code === "KeyE") {
+      e.preventDefault();
+      this.hooks.export(this.selectedPaths());
       return true;
     }
     if (mod && e.code === "KeyA") {

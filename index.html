@@ -160,6 +160,62 @@
       </div>
     </div>
 
+    <div id="ex-dialog" hidden>
+      <div class="dialog ex-dialog" role="dialog" aria-modal="true" aria-labelledby="ex-title">
+        <h2 id="ex-title"></h2>
+        <div class="ex-row">
+          <label for="ex-format" data-t="exFormat"></label>
+          <select id="ex-format">
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+            <option value="webp">WebP</option>
+            <option value="avif">AVIF</option>
+            <option value="heic">HEIC</option>
+            <option value="tiff">TIFF</option>
+            <option value="bmp">BMP</option>
+          </select>
+        </div>
+        <div class="ex-row" id="ex-quality-row">
+          <label for="ex-quality" data-t="exQuality"></label>
+          <input id="ex-quality" type="range" min="1" max="100" />
+          <span id="ex-quality-value"></span>
+        </div>
+        <p class="ex-note" id="ex-format-note" hidden></p>
+        <fieldset>
+          <legend data-t="exSize"></legend>
+          <label><input type="radio" name="ex-resize" value="none" /> <span data-t="exSizeOriginal"></span></label>
+          <label><input type="radio" name="ex-resize" value="long" /> <span data-t="exSizeLong"></span> <input id="ex-long" type="number" min="16" max="20000" /> px</label>
+          <label><input type="radio" name="ex-resize" value="percent" /> <span data-t="exSizePercent"></span> <input id="ex-percent" type="number" min="1" max="1000" /> %</label>
+        </fieldset>
+        <fieldset id="ex-meta-set">
+          <legend data-t="exMeta"></legend>
+          <label><input type="radio" name="ex-meta" value="keep" /> <span data-t="exMetaKeep"></span></label>
+          <label><input type="radio" name="ex-meta" value="strip_gps" /> <span data-t="exMetaNoGps"></span></label>
+          <label><input type="radio" name="ex-meta" value="strip" /> <span data-t="exMetaStrip"></span></label>
+        </fieldset>
+        <div class="ex-row" id="ex-bg-row">
+          <label for="ex-background" data-t="exBackground"></label>
+          <input id="ex-background" type="color" />
+        </div>
+        <fieldset>
+          <legend data-t="exDest"></legend>
+          <label><input type="radio" name="ex-dest" value="sub" /> <span data-t="exDestSub"></span> <input id="ex-subname" type="text" spellcheck="false" /></label>
+          <label><input type="radio" name="ex-dest" value="same" /> <span data-t="exDestSame"></span></label>
+          <label id="ex-dest-pane"><input type="radio" name="ex-dest" value="pane" /> <span data-t="exDestPane"></span></label>
+          <label><input type="radio" name="ex-dest" value="custom" /> <span data-t="exDestCustom"></span> <button id="ex-custom" type="button"></button></label>
+        </fieldset>
+        <div class="ex-row">
+          <label for="ex-suffix" data-t="exSuffix"></label>
+          <input id="ex-suffix" type="text" spellcheck="false" placeholder="_web" />
+        </div>
+        <p class="ex-note" id="ex-preview"></p>
+        <div class="dialog-actions">
+          <button id="ex-cancel" type="button"></button>
+          <button id="ex-start" class="primary" type="button"></button>
+        </div>
+      </div>
+    </div>
+
     <aside id="panel" class="folder-lists" hidden></aside>
 
     <div id="settings" hidden>

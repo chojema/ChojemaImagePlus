@@ -25,6 +25,10 @@ A lightweight, fast image viewer for Windows and macOS.
 - **Move to Trash**: send selected images to the Trash (Recycle Bin on Windows) with the trash button, the Delete key (⌘ + Backspace on macOS), or the right-click menu. Pair files can go along; in the image view the next image is shown afterwards.
 - **Right-click menu**: view, compare side by side, move or copy to another folder, show in Finder (File Explorer), move to Trash
 - **Slideshow** (S or the play button): choose the folder and whether to include subfolders, the order (list sort order / random), images smaller than the window (original size / enlarge) and larger (shrink / original size), the interval, what to show (current date and time, file name, position), looping, and full screen. Settings are remembered.
+- **Export to another format** (Ctrl/⌘ + E or right-click): JPEG, PNG, WebP, AVIF, HEIC (macOS), TIFF, BMP
+  - Quality, size (original / long side / scale), photo information (keep / remove location only / remove all), background for transparent areas
+  - Destination (subfolder of the source folder / same folder / other pane / another folder) and text added to file names
+  - Photo orientation is applied to the pixels and the originals are never changed; you are asked about name conflicts.
 - Favorite folders (add, remove, rename, reorder) and a recent folders list
 - Drag and drop, open several files at once, image file associations (open with a double-click)
 - Settings: screen shown when the app opens (last folder / empty screen), delete stored thumbnails
@@ -68,6 +72,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Undo the last move or copy | Ctrl (⌘) + Z |
 | Move selected images to the Trash | Delete, ⌘ + Backspace (macOS) |
 | Slideshow | S |
+| Export selected images to another format | Ctrl (⌘) + E |
 | Parent folder | Backspace, Alt + ↑ |
 | Refresh | F5 |
 | Hide or show sidebar | Ctrl (⌘) + B |

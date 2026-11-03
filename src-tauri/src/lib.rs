@@ -1,3 +1,4 @@
+mod export;
 mod files;
 mod folders;
 mod library;
@@ -203,6 +204,32 @@ fn open_privacy_settings() {
 }
 
 #[tauri::command]
+async fn export_plan(sources: Vec<String>, dest: String, options: export::Options) -> Result<Vec<export::Planned>, String> {
+    tauri::async_runtime::spawn_blocking(move || export::plan(&sources, Path::new(&dest), &options))
+        .await
+        .map_err(|_| "failed".to_string())?
+}
+
+#[tauri::command]
+async fn export_run(
+    app: AppHandle,
+    dest: String,
+    options: export::Options,
+    jobs: Vec<export::Job>,
+    cancel: tauri::State<'_, TransferCancel>,
+) -> Result<export::Outcome, String> {
+    let flag = cancel.0.clone();
+    flag.store(false, Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || {
+        export::run(Path::new(&dest), &options, &jobs, &flag, |p| {
+            let _ = app.emit("transfer-progress", p);
+        })
+    })
+    .await
+    .map_err(|_| "failed".to_string())
+}
+
+#[tauri::command]
 fn transfer_cancel(cancel: tauri::State<TransferCancel>) {
     cancel.0.store(true, Ordering::Relaxed);
 }
@@ -307,7 +334,9 @@ pub fn run() {
             trash_plan,
             trash_files,
             reveal,
-            slideshow_list
+            slideshow_list,
+            export_plan,
+            export_run
         ])
         .build(tauri::generate_context!())
         .expect("failed to build application");

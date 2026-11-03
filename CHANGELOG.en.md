@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0
+
+- Export to another format (Ctrl/⌘ + E, right-click): JPEG, PNG, WebP, AVIF, HEIC (macOS), TIFF, BMP
+- Quality, size (original / long side / scale), photo information (keep / remove location / remove all), background for transparency
+- Destination (subfolder / same folder / other pane / another folder), file name suffix, conflict prompts, progress
+- Orientation applied to pixels, originals never changed, settings remembered
+
 ## 0.8.0
 
 - Slideshow (S or the play button): choose a folder and whether to include subfolders

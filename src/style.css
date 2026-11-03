@@ -1388,3 +1388,111 @@ body:not(.mode-slideshow) #slideshow {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Export dialog */
+
+#ex-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#ex-dialog[hidden],
+.ex-row[hidden],
+.ex-note[hidden],
+#ex-dest-pane[hidden] {
+  display: none;
+}
+
+.ex-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.ex-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ex-row > label {
+  min-width: 96px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ex-dialog select,
+.ex-dialog input[type="number"],
+.ex-dialog input[type="text"] {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1c1c1e;
+  color: var(--text);
+  font: inherit;
+}
+
+.ex-dialog input[type="number"] {
+  width: 76px;
+}
+
+.ex-dialog input[type="text"] {
+  width: 120px;
+}
+
+#ex-quality {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+#ex-quality-value {
+  min-width: 28px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ex-dialog fieldset {
+  margin-bottom: 12px;
+}
+
+.ex-dialog fieldset label {
+  flex-wrap: wrap;
+}
+
+.ex-dialog input[type="radio"]:disabled + span {
+  opacity: 0.4;
+}
+
+#ex-custom {
+  max-width: 180px;
+  overflow: hidden;
+  padding: 3px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#ex-background {
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+}
+
+.ex-note {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.ex-dialog input::placeholder {
+  color: #5f5f66;
+}
