@@ -162,6 +162,7 @@ export class Library {
     const editing = this.editing === item.path && this.editIn === container;
     const row = el("li", this.rowClass(item));
     row.title = item.path;
+    if (item.exists) row.dataset.drop = item.path;
     const key = el("span", "key", index < 9 ? String(index + 1) : "");
     const text = el("span", "text");
 
@@ -230,6 +231,7 @@ export class Library {
     for (const item of this.data.recent) {
       const row = el("li", this.rowClass(item));
       row.title = item.path;
+      if (item.exists) row.dataset.drop = item.path;
       const text = el("span", "text");
       text.append(el("span", "name", item.name), el("span", "path", item.exists ? item.path : `${t.missing} · ${item.path}`));
       row.append(el("span", "key"), text);

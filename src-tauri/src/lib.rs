@@ -4,11 +4,13 @@ mod library;
 mod protocol;
 mod settings;
 mod thumbs;
+mod transfer;
 #[cfg(windows)]
 mod wic;
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use library::{Library, Snapshot};
 use serde_json::{Map, Value};
 use settings::Settings;
@@ -124,6 +126,47 @@ async fn thumbs_clear(thumbs: tauri::State<'_, Thumbs>) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Default)]
+struct TransferCancel(Arc<AtomicBool>);
+
+#[tauri::command]
+async fn transfer_plan(sources: Vec<String>, dest: String, include_pairs: bool) -> Result<transfer::Plan, String> {
+    tauri::async_runtime::spawn_blocking(move || transfer::plan(&sources, Path::new(&dest), include_pairs))
+        .await
+        .map_err(|_| "failed".to_string())?
+}
+
+#[tauri::command]
+async fn transfer_run(
+    app: AppHandle,
+    mode: transfer::Mode,
+    dest: String,
+    jobs: Vec<transfer::Job>,
+    cancel: tauri::State<'_, TransferCancel>,
+) -> Result<transfer::Outcome, String> {
+    let flag = cancel.0.clone();
+    flag.store(false, Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || {
+        transfer::run(mode, Path::new(&dest), &jobs, &flag, |p| {
+            let _ = app.emit("transfer-progress", p);
+        })
+    })
+    .await
+    .map_err(|_| "failed".to_string())
+}
+
+#[tauri::command]
+fn transfer_cancel(cancel: tauri::State<TransferCancel>) {
+    cancel.0.store(true, Ordering::Relaxed);
+}
+
+#[tauri::command]
+async fn transfer_undo(mode: transfer::Mode, items: Vec<transfer::Done>) -> Result<transfer::Outcome, String> {
+    tauri::async_runtime::spawn_blocking(move || transfer::undo(mode, &items))
+        .await
+        .map_err(|_| "failed".to_string())
+}
+
 #[tauri::command]
 fn library_get(library: tauri::State<Library>) -> Snapshot {
     library.snapshot()
@@ -167,6 +210,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage(LaunchState::default())
+        .manage(TransferCancel::default())
         .register_asynchronous_uri_scheme_protocol("img", |_ctx, request, responder| {
             tauri::async_runtime::spawn_blocking(move || {
                 responder.respond(protocol::handle(&request));
@@ -207,7 +251,11 @@ pub fn run() {
             folder_roots,
             settings_get,
             settings_set,
-            thumbs_clear
+            thumbs_clear,
+            transfer_plan,
+            transfer_run,
+            transfer_cancel,
+            transfer_undo
         ])
         .build(tauri::generate_context!())
         .expect("failed to build application");

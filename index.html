@@ -32,6 +32,7 @@
           <select id="sort"></select>
           <button id="sort-dir" data-browse="sort-dir" type="button"><svg viewBox="0 0 24 24"><path d="M8 5v14M4 15l4 4 4-4M16 19V5M12 9l4-4 4 4" /></svg></button>
           <input id="thumb-size" type="range" min="96" max="320" step="8" />
+          <button id="transfer-button" data-browse="transfer" type="button"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M10 13h6M13.5 10.5L16 13l-2.5 2.5" /></svg></button>
           <button id="compare-button" data-browse="compare" type="button"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="8" height="14" rx="1.5" /><rect x="13" y="5" width="8" height="14" rx="1.5" /></svg></button>
           <button id="browse-favorite" data-browse="favorite" type="button"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z" /></svg></button>
           <button data-browse="refresh" type="button"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" /></svg></button>
@@ -123,6 +124,12 @@
       </div>
     </div>
 
+    <div id="progress" hidden>
+      <span id="progress-label"></span>
+      <div class="progress-track"><div id="progress-fill"></div></div>
+      <button id="progress-cancel" type="button"></button>
+    </div>
+    <div id="drag-ghost" hidden></div>
     <div id="toast" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

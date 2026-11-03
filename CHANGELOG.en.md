@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+- Move or copy to another folder: drag onto the folder tree, favorites, recent folders, or path bar, or use the Move/Copy button (M)
+- Choose move or copy each time; on name conflicts choose keep both (rename), replace, or skip, optionally for all remaining conflicts
+- Pair files with the same name (RAW, .xmp, Live Photo, …) can go along and are renamed to match
+- Replaced files go to the trash; undo the last operation (Ctrl/⌘ + Z); progress with cancel
+- Moving to another drive deletes the original only after the copy has completed
+
 ## 0.4.0
 
 - Side-by-side compare: select 2 to 4 thumbnails and click Compare or press C

@@ -8,6 +8,8 @@ interface Hooks {
   navigate: (path: string) => void;
   open: (entries: Entry[], index: number) => void;
   compare: (entries: Entry[]) => void;
+  /** `dest` null asks for the destination folder. */
+  transfer: (paths: string[], dest: string | null) => void;
   favorite: () => void;
   chooseFolder: () => void;
   chooseFile: () => void;
@@ -24,6 +26,7 @@ export class Gallery {
   private focus = -1;
   private anchor = -1;
   private loadToken = 0;
+  private suppressClick = false;
 
   private readonly grid = $<HTMLElement>("grid");
   private readonly empty = $<HTMLElement>("gallery-empty");
@@ -53,6 +56,7 @@ export class Gallery {
     const titles: Record<string, string> = {
       up: t.up,
       "sort-dir": t.sortDir,
+      transfer: t.transfer,
       compare: t.compare,
       favorite: t.favoriteToggle,
       refresh: t.refresh,
@@ -71,7 +75,12 @@ export class Gallery {
     $("empty-open-file").addEventListener("click", () => hooks.chooseFile());
     $("empty-open-folder").addEventListener("click", () => hooks.chooseFolder());
 
+    this.bindDrag();
     this.grid.addEventListener("click", (e) => {
+      if (this.suppressClick) {
+        this.suppressClick = false;
+        return;
+      }
       const cell = (e.target as Element).closest<HTMLElement>(".cell");
       if (!cell) {
         this.select(new Set());
@@ -118,6 +127,12 @@ export class Gallery {
       case "compare":
         this.compareSelection();
         break;
+      case "transfer": {
+        const paths = this.selectedPaths();
+        if (!paths.length) this.hooks.toast(t.transferNeed);
+        else this.hooks.transfer(paths, null);
+        break;
+      }
       case "refresh":
         if (this.folder) void this.load(this.folder, this.current?.path);
         break;
@@ -125,6 +140,10 @@ export class Gallery {
         this.hooks.chooseFolder();
         break;
     }
+  }
+
+  selectedPaths(): string[] {
+    return [...this.selected].sort((a, b) => a - b).map((i) => this.entries[i].path);
   }
 
   private compareSelection(): void {
@@ -255,6 +274,7 @@ export class Gallery {
       const label = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
       button.textContent = label;
       button.title = path;
+      button.dataset.drop = path;
       if (i === chain.length - 1) button.classList.add("current");
       button.addEventListener("click", () => this.hooks.navigate(path));
       if (i > 0) {
@@ -359,6 +379,11 @@ export class Gallery {
       this.command("up");
       return true;
     }
+    if (e.code === "KeyM") {
+      e.preventDefault();
+      this.command("transfer");
+      return true;
+    }
     if (e.code === "KeyC") {
       e.preventDefault();
       this.command("compare");
@@ -404,5 +429,66 @@ export class Gallery {
     }
     this.scrollTo(to);
     return true;
+  }
+
+  /** Dragging selected thumbnails onto a folder (tree, favorites, recent, path bar) moves or copies them. */
+  private bindDrag(): void {
+    const ghost = $<HTMLElement>("drag-ghost");
+    let start: { x: number; y: number; index: number; id: number } | null = null;
+    let dragging = false;
+    let target: HTMLElement | null = null;
+
+    const setTarget = (el: HTMLElement | null) => {
+      if (el === target) return;
+      target?.classList.remove("drop-hover");
+      target = el;
+      target?.classList.add("drop-hover");
+    };
+
+    this.grid.addEventListener("pointerdown", (e) => {
+      const cell = (e.target as Element).closest<HTMLElement>(".cell");
+      if (e.button !== 0 || !cell) return;
+      start = { x: e.clientX, y: e.clientY, index: Number(cell.dataset.index), id: e.pointerId };
+    });
+    this.grid.addEventListener("pointermove", (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      if (!dragging) {
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
+        dragging = true;
+        this.grid.setPointerCapture(e.pointerId);
+        if (!this.selected.has(start.index)) {
+          this.focus = start.index;
+          this.anchor = start.index;
+          this.select(new Set([start.index]));
+        }
+        const first = this.entries[[...this.selected].sort((a, b) => a - b)[0]];
+        ghost.replaceChildren();
+        const img = document.createElement("img");
+        img.src = this.thumbSrc(first);
+        const badge = document.createElement("span");
+        badge.textContent = String(this.selected.size);
+        ghost.append(img, badge);
+        ghost.hidden = false;
+        document.body.classList.add("dragging-files");
+      }
+      ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 12}px)`;
+      (ghost.querySelector("span") as HTMLElement).textContent = `${e.clientX},${e.clientY} ${document.elementFromPoint(e.clientX, e.clientY)?.className}`;
+      const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-drop]") ?? null;
+      setTarget(hit && !samePath(hit.dataset.drop, this.folder) ? hit : null);
+    });
+    const end = (e: PointerEvent, drop: boolean) => {
+      if (!start || e.pointerId !== start.id) return;
+      start = null;
+      if (!dragging) return;
+      dragging = false;
+      this.suppressClick = true;
+      ghost.hidden = true;
+      document.body.classList.remove("dragging-files");
+      const dest = target?.dataset.drop;
+      setTarget(null);
+      if (drop && dest) this.hooks.transfer(this.selectedPaths(), dest);
+    };
+    this.grid.addEventListener("pointerup", (e) => end(e, true));
+    this.grid.addEventListener("pointercancel", (e) => end(e, false));
   }
 }

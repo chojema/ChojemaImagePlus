@@ -49,6 +49,7 @@ export class FolderTree {
     row.className = "row";
     row.style.paddingLeft = `${6 + depth * 14}px`;
     row.title = folder.path;
+    row.dataset.drop = folder.path;
 
     const twisty = document.createElement("button");
     twisty.type = "button";

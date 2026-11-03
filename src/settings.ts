@@ -10,6 +10,7 @@ export interface Settings {
   sortDesc: boolean;
   thumbSize: number;
   sidebarWidth: number;
+  includePairs: boolean;
 }
 
 const defaults: Settings = {
@@ -18,6 +19,7 @@ const defaults: Settings = {
   sortDesc: false,
   thumbSize: 160,
   sidebarWidth: 260,
+  includePairs: true,
 };
 
 export const settings: Settings = { ...defaults };

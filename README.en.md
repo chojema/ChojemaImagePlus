@@ -15,6 +15,10 @@ A lightweight, fast image viewer for Windows and macOS.
 - **Side-by-side compare**: select 2 to 4 thumbnails and click Compare or press C.
   - 2 images side by side or stacked, 3 in a row, 4 in a 2×2 grid
   - Keep zoom and position in step across panes (the same area is shown even at different resolutions); rotate or close each pane
+- **Move or copy to another folder**: drag selected thumbnails onto a folder, favorite, recent folder, or the path bar on the left, or use the Move/Copy button (M) to pick a folder.
+  - You choose move or copy each time; when a file with the same name exists you choose keep both (rename), replace, or skip.
+  - Pair files with the same name (RAW+JPEG, .xmp, Live Photo videos, …) can go along, and are renamed to match when the image is renamed.
+  - Replaced files go to the trash, and the last operation can be undone with Ctrl (⌘) + Z.
 - Favorite folders (add, remove, rename, reorder) and a recent folders list
 - Drag and drop, open several files at once, image file associations (open with a double-click)
 - Settings: screen shown when the app opens (last folder / empty screen), delete stored thumbnails
@@ -53,6 +57,8 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | View large | Enter, Space, double-click |
 | Select all | Ctrl (⌘) + A |
 | Compare 2–4 selected images | C |
+| Move or copy selected images to another folder | M, drag onto a folder |
+| Undo the last move or copy | Ctrl (⌘) + Z |
 | Parent folder | Backspace, Alt + ↑ |
 | Refresh | F5 |
 | Hide or show sidebar | Ctrl (⌘) + B |

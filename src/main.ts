@@ -8,6 +8,8 @@ import { Compare } from "./compare";
 import { Gallery } from "./gallery";
 import { errorText, t } from "./i18n";
 import { Library } from "./library";
+import { modalOpen } from "./modal";
+import { Transfer } from "./transfer";
 import { loadSettings, saveSettings, settings, SettingsDialog } from "./settings";
 import { FolderTree } from "./tree";
 import { Viewer } from "./viewer";
@@ -33,6 +35,7 @@ const gallery = new Gallery({
   navigate: (path) => void navigate(path),
   open: (entries, index) => openViewer(entries, index, gallery.folder),
   compare: (entries) => openCompare(entries),
+  transfer: (paths, dest) => void startTransfer(paths, dest),
   favorite: () => toggleFavorite(),
   chooseFolder: () => void chooseFolder(),
   chooseFile: () => void chooseFile(),
@@ -43,6 +46,7 @@ const viewer = new Viewer({
   favorite: () => toggleFavorite(),
   folders: () => library.toggleOpen(),
 });
+const transfer = new Transfer(() => gallery.command("refresh"));
 const compare = new Compare({ back: () => backFromCompare() });
 const settingsDialog = new SettingsDialog();
 
@@ -163,11 +167,17 @@ async function chooseFolder(): Promise<void> {
   if (typeof picked === "string") await navigate(picked);
 }
 
+async function startTransfer(paths: string[], dest: string | null): Promise<void> {
+  const target = dest ?? (await open({ multiple: false, directory: true, defaultPath: gallery.folder ?? undefined }));
+  if (typeof target === "string") await transfer.start(paths, target);
+}
+
 function toggleSidebar(): void {
   document.body.classList.toggle("sidebar-hidden");
 }
 
 window.addEventListener("keydown", (e) => {
+  if (modalOpen()) return;
   if (settingsDialog.isOpen) {
     if (e.key === "Escape") settingsDialog.close();
     return;
@@ -185,6 +195,7 @@ window.addEventListener("keydown", (e) => {
       : e.code === "KeyD" ? toggleFavorite
       : e.code === "KeyB" ? () => (mode === "viewer" ? library.toggleOpen() : toggleSidebar())
       : e.code === "Comma" ? () => settingsDialog.open()
+      : e.code === "KeyZ" && mode === "browser" ? () => void transfer.undo()
       : digit ? () => library.openFavorite(Number(digit[1]))
       : null;
     if (command) {

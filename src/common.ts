@@ -51,12 +51,12 @@ export function formatSize(bytes: number): string {
 
 const toast = () => document.getElementById("toast")!;
 let toastTimer = 0;
-export function showToast(text: string): void {
+export function showToast(text: string, ms = 1600): void {
   const el = toast();
   el.textContent = text;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (el.hidden = true), 1600);
+  toastTimer = window.setTimeout(() => (el.hidden = true), ms);
 }
 
 export function isFullscreen(): boolean {

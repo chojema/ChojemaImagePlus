@@ -956,3 +956,157 @@ body.no-folder #gallery-bar > :not([data-browse="open"]) {
 #compare-button.ready {
   color: var(--accent);
 }
+
+/* Move and copy */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dialog-message {
+  margin: 0 0 14px;
+  color: var(--muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.dialog-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 16px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.dialog-check input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.dialog-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dialog button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.dialog button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#progress {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(480px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #26262a;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  transform: translateX(-50%);
+}
+
+#progress[hidden] {
+  display: none;
+}
+
+#progress-label {
+  flex: 0 1 45%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+#progress-fill {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+
+#progress-cancel {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+#drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+#drag-ghost[hidden] {
+  display: none;
+}
+
+#drag-ghost img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+  opacity: 0.9;
+}
+
+#drag-ghost span {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
+}
+
+body.dragging-files,
+body.dragging-files * {
+  cursor: copy !important;
+}
+
+.drop-hover,
+#tree .row.drop-hover,
+.folder-lists li.drop-hover {
+  background: rgba(74, 163, 255, 0.45) !important;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
