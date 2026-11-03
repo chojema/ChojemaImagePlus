@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- Dual pane (F6): split the list into two panes, side by side or top and bottom
+- Drag between panes, or press M to move or copy to the other pane's folder
+- Switch the active pane with Tab; the folder tree and favorites open in the active pane
+- Dual mode, its layout, and the second pane's folder are remembered
+
 ## 0.5.0
 
 - Move or copy to another folder: drag onto the folder tree, favorites, recent folders, or path bar, or use the Move/Copy button (M)

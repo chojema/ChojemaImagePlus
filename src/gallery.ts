@@ -14,6 +14,11 @@ interface Hooks {
   chooseFolder: () => void;
   chooseFile: () => void;
   toast: (text: string) => void;
+  activate: (gallery: Gallery) => void;
+  sizeChanged: (size: number) => void;
+  dual: () => void;
+  dualLayout: () => void;
+  sortChanged: () => void;
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -28,16 +33,35 @@ export class Gallery {
   private loadToken = 0;
   private suppressClick = false;
 
-  private readonly grid = $<HTMLElement>("grid");
-  private readonly empty = $<HTMLElement>("gallery-empty");
-  private readonly emptyText = $<HTMLElement>("gallery-empty-text");
-  private readonly crumbs = $<HTMLElement>("crumbs");
-  private readonly count = $<HTMLElement>("gallery-count");
-  private readonly sort = $<HTMLSelectElement>("sort");
-  private readonly size = $<HTMLInputElement>("thumb-size");
-  private readonly favoriteButton = $<HTMLButtonElement>("browse-favorite");
+  readonly root: HTMLElement;
+  private readonly grid: HTMLElement;
+  private readonly empty: HTMLElement;
+  private readonly emptyText: HTMLElement;
+  private readonly crumbs: HTMLElement;
+  private readonly count: HTMLElement;
+  private readonly sort: HTMLSelectElement;
+  private readonly size: HTMLInputElement;
+  private readonly favoriteButton: HTMLButtonElement;
 
-  constructor(private readonly hooks: Hooks) {
+  constructor(
+    container: HTMLElement,
+    private readonly hooks: Hooks,
+  ) {
+    const template = $<HTMLTemplateElement>("gallery-template");
+    this.root = (template.content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+    container.append(this.root);
+    const q = <T extends HTMLElement>(cls: string) => this.root.querySelector(`.${cls}`) as T;
+    this.grid = q("grid");
+    this.empty = q("gallery-empty");
+    this.emptyText = q("gallery-empty-text");
+    this.crumbs = q("crumbs");
+    this.count = q("gallery-count");
+    this.sort = q<HTMLSelectElement>("sort");
+    this.size = q<HTMLInputElement>("thumb-size");
+    this.favoriteButton = q<HTMLButtonElement>("browse-favorite");
+    this.root.addEventListener("pointerdown", () => hooks.activate(this), true);
+    this.root.addEventListener("focusin", () => hooks.activate(this));
+
     const options: [SortKey, string][] = [
       ["name", t.sortName],
       ["date", t.sortDate],
@@ -47,10 +71,13 @@ export class Gallery {
     this.sort.title = this.sort.getAttribute("aria-label") ?? "";
     this.sort.addEventListener("change", () => {
       saveSettings({ sort: this.sort.value as SortKey });
-      this.resort();
+      this.hooks.sortChanged();
     });
     this.size.title = t.thumbSize;
-    this.size.addEventListener("input", () => this.applySize());
+    this.size.addEventListener("input", () => {
+      this.applySize();
+      hooks.sizeChanged(Number(this.size.value));
+    });
     this.size.addEventListener("change", () => saveSettings({ thumbSize: Number(this.size.value) }));
 
     const titles: Record<string, string> = {
@@ -61,8 +88,10 @@ export class Gallery {
       favorite: t.favoriteToggle,
       refresh: t.refresh,
       open: t.openTitle,
+      dual: t.dualToggle,
+      "dual-layout": t.dualLayout,
     };
-    for (const button of document.querySelectorAll<HTMLButtonElement>("[data-browse]")) {
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-browse]")) {
       const action = button.dataset.browse!;
       button.title = titles[action] ?? "";
       button.setAttribute("aria-label", button.title);
@@ -70,10 +99,10 @@ export class Gallery {
     }
 
     this.emptyText.textContent = t.emptyText;
-    $("empty-open-file").textContent = t.openFile;
-    $("empty-open-folder").textContent = t.openFolder;
-    $("empty-open-file").addEventListener("click", () => hooks.chooseFile());
-    $("empty-open-folder").addEventListener("click", () => hooks.chooseFolder());
+    q("empty-open-file").textContent = t.openFile;
+    q("empty-open-folder").textContent = t.openFolder;
+    q("empty-open-file").addEventListener("click", () => hooks.chooseFile());
+    q("empty-open-folder").addEventListener("click", () => hooks.chooseFolder());
 
     this.bindDrag();
     this.grid.addEventListener("click", (e) => {
@@ -101,12 +130,32 @@ export class Gallery {
     this.updateSortDir();
   }
 
+  /** Re-applies shared sort settings after they change in either pane. */
+  applySort(): void {
+    this.sort.value = settings.sort;
+    this.updateSortDir();
+    this.resort();
+  }
+
+  setSize(size: number): void {
+    this.size.value = String(size);
+    this.applySize();
+  }
+
+  setActive(on: boolean): void {
+    this.root.classList.toggle("active", on);
+  }
+
+  focusGrid(): void {
+    this.grid.focus({ preventScroll: true });
+  }
+
   private applySize(): void {
     this.grid.style.setProperty("--thumb", `${this.size.value}px`);
   }
 
   private updateSortDir(): void {
-    $("sort-dir").classList.toggle("desc", settings.sortDesc);
+    this.root.querySelector(".sort-dir")!.classList.toggle("desc", settings.sortDesc);
   }
 
   command(action: string): void {
@@ -118,8 +167,7 @@ export class Gallery {
       }
       case "sort-dir":
         saveSettings({ sortDesc: !settings.sortDesc });
-        this.updateSortDir();
-        this.resort();
+        this.hooks.sortChanged();
         break;
       case "favorite":
         this.hooks.favorite();
@@ -138,6 +186,12 @@ export class Gallery {
         break;
       case "open":
         this.hooks.chooseFolder();
+        break;
+      case "dual":
+        this.hooks.dual();
+        break;
+      case "dual-layout":
+        this.hooks.dualLayout();
         break;
     }
   }
@@ -232,7 +286,9 @@ export class Gallery {
     this.empty.hidden = hasFolder && this.entries.length > 0;
     this.emptyText.textContent = hasFolder ? t.folderEmpty : t.emptyText;
     this.empty.querySelector<HTMLElement>(".empty-actions")!.hidden = hasFolder;
-    document.body.classList.toggle("no-folder", !hasFolder);
+    this.root.classList.toggle("no-folder", !hasFolder);
+    if (this.folder) this.root.dataset.drop = this.folder;
+    else delete this.root.dataset.drop;
 
     const fragment = document.createDocumentFragment();
     this.entries.forEach((entry, i) => {
@@ -296,7 +352,7 @@ export class Gallery {
     }
     this.count.textContent = this.folder ? t.count(this.entries.length, this.selected.size) : "";
     const n = this.selected.size;
-    $<HTMLButtonElement>("compare-button").classList.toggle("ready", n >= 2 && n <= MAX_COMPARE);
+    this.root.querySelector(".compare-button")!.classList.toggle("ready", n >= 2 && n <= MAX_COMPARE);
   }
 
   private select(next: Set<number>): void {

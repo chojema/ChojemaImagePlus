@@ -11,6 +11,9 @@ export interface Settings {
   thumbSize: number;
   sidebarWidth: number;
   includePairs: boolean;
+  dual: boolean;
+  dualVertical: boolean;
+  dualFolder: string;
 }
 
 const defaults: Settings = {
@@ -20,6 +23,9 @@ const defaults: Settings = {
   thumbSize: 160,
   sidebarWidth: 260,
   includePairs: true,
+  dual: false,
+  dualVertical: false,
+  dualFolder: "",
 };
 
 export const settings: Settings = { ...defaults };

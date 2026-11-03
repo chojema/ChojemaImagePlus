@@ -94,6 +94,9 @@ const ko = {
   undone: (n: number) => `${n}개를 되돌렸습니다.`,
   failedTitle: (n: number) => `${n}개 파일을 처리하지 못했습니다`,
   andMore: (n: number) => `외 ${n}개`,
+  dualToggle: "이중 창 켜기·끄기 (F6)",
+  dualLayout: "좌우 / 상하 배치",
+  dualNoTarget: "반대쪽 창에서 대상 폴더를 먼저 여세요.",
 };
 
 const en: typeof ko = {
@@ -192,6 +195,9 @@ const en: typeof ko = {
   undone: (n: number) => `Undid ${n} file${n === 1 ? "" : "s"}.`,
   failedTitle: (n: number) => `${n} file${n === 1 ? "" : "s"} could not be processed`,
   andMore: (n: number) => `and ${n} more`,
+  dualToggle: "Dual pane on/off (F6)",
+  dualLayout: "Side by side / top and bottom",
+  dualNoTarget: "Open the destination folder in the other pane first.",
 };
 
 export const isKorean = navigator.language.toLowerCase().startsWith("ko");

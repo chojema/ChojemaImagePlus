@@ -19,6 +19,9 @@ A lightweight, fast image viewer for Windows and macOS.
   - You choose move or copy each time; when a file with the same name exists you choose keep both (rename), replace, or skip.
   - Pair files with the same name (RAW+JPEG, .xmp, Live Photo videos, …) can go along, and are renamed to match when the image is renamed.
   - Replaced files go to the trash, and the last operation can be undone with Ctrl (⌘) + Z.
+- **Dual pane** (F6): split the list into two panes, side by side or top and bottom, to work with two folders at once.
+  - Drag thumbnails from one pane to the other, or press M, to move or copy them to the other pane's folder.
+  - Switch panes with Tab; the folder tree and favorites open in the active pane (blue underline).
 - Favorite folders (add, remove, rename, reorder) and a recent folders list
 - Drag and drop, open several files at once, image file associations (open with a double-click)
 - Settings: screen shown when the app opens (last folder / empty screen), delete stored thumbnails
@@ -57,7 +60,8 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | View large | Enter, Space, double-click |
 | Select all | Ctrl (⌘) + A |
 | Compare 2–4 selected images | C |
-| Move or copy selected images to another folder | M, drag onto a folder |
+| Move or copy selected images to another folder | M (to the other pane in dual mode), drag onto a folder |
+| Dual pane on/off / switch pane | F6 / Tab |
 | Undo the last move or copy | Ctrl (⌘) + Z |
 | Parent folder | Backspace, Alt + ↑ |
 | Refresh | F5 |

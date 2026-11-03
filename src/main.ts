@@ -31,24 +31,83 @@ const library = new Library($("side-library"), $("panel"), {
   toast: showToast,
 });
 const tree = new FolderTree($("tree"), (path) => void navigate(path));
-const gallery = new Gallery({
-  navigate: (path) => void navigate(path),
-  open: (entries, index) => openViewer(entries, index, gallery.folder),
-  compare: (entries) => openCompare(entries),
-  transfer: (paths, dest) => void startTransfer(paths, dest),
-  favorite: () => toggleFavorite(),
-  chooseFolder: () => void chooseFolder(),
-  chooseFile: () => void chooseFile(),
-  toast: showToast,
-});
+const panes: Gallery[] = [];
+let activeIndex = 0;
+const active = (): Gallery => panes[activeIndex];
+
+function makePane(): Gallery {
+  const pane: Gallery = new Gallery($("galleries"), {
+    navigate: (path) => void navigate(path, undefined, pane),
+    open: (entries, index) => openViewer(entries, index, pane.folder),
+    compare: (entries) => openCompare(entries),
+    transfer: (paths, dest) => void startTransfer(paths, dest, pane),
+    favorite: () => toggleFavorite(),
+    chooseFolder: () => void chooseFolder(),
+    chooseFile: () => void chooseFile(),
+    toast: showToast,
+    activate: (g) => activate(panes.indexOf(g)),
+    sizeChanged: (size) => panes.forEach((p) => p !== pane && p.setSize(size)),
+    dual: () => void toggleDual(),
+    dualLayout: () => toggleDualLayout(),
+    sortChanged: () => panes.forEach((p) => p.applySort()),
+  });
+  pane.applySettings();
+  panes.push(pane);
+  return pane;
+}
+
+function activate(i: number): void {
+  if (i < 0 || i >= panes.length) return;
+  const changed = i !== activeIndex;
+  activeIndex = i;
+  panes.forEach((p, j) => p.setActive(j === i && panes.length > 1));
+  if (!changed) return;
+  const folder = active().folder;
+  library.setActive(folder);
+  if (folder) void tree.reveal(folder);
+  setTitle(folder ? `${folderName(folder)} - ${APP_NAME}` : APP_NAME);
+  updateFavorite();
+}
+
+async function toggleDual(): Promise<void> {
+  if (panes.length > 1) {
+    const second = panes.pop()!;
+    second.root.remove();
+    document.body.classList.remove("dual");
+    saveSettings({ dual: false });
+    activeIndex = -1;
+    activate(0);
+    return;
+  }
+  document.body.classList.add("dual");
+  saveSettings({ dual: true });
+  const pane = makePane();
+  const start = settings.dualFolder || panes[0].folder;
+  if (start && !(await pane.load(start))) {
+    if (panes[0].folder) await pane.load(panes[0].folder);
+  }
+  if (!pane.folder) pane.showEmpty();
+  activate(1);
+}
+
+function toggleDualLayout(): void {
+  saveSettings({ dualVertical: !settings.dualVertical });
+  document.body.classList.toggle("dual-vertical", settings.dualVertical);
+}
 const viewer = new Viewer({
   back: () => back(),
   favorite: () => toggleFavorite(),
   folders: () => library.toggleOpen(),
 });
-const transfer = new Transfer(() => gallery.command("refresh"));
+const transfer = new Transfer(() => panes.forEach((p) => p.folder && p.command("refresh")));
 const compare = new Compare({ back: () => backFromCompare() });
 const settingsDialog = new SettingsDialog();
+
+// Title updates are chained so quick successive changes cannot arrive out of order.
+let titleChain: Promise<void> = Promise.resolve();
+function setTitle(text: string): void {
+  titleChain = titleChain.then(() => appWindow.setTitle(text)).catch(() => {});
+}
 
 function folderName(path: string): string {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
@@ -61,20 +120,21 @@ function setMode(next: Mode): void {
   if (next !== "compare") compare.close();
   if (next === "browser") {
     library.close();
-    void appWindow.setTitle(gallery.folder ? `${folderName(gallery.folder)} - ${APP_NAME}` : APP_NAME);
-    $("grid").focus();
+    const folder = active().folder;
+    setTitle(folder ? `${folderName(folder)} - ${APP_NAME}` : APP_NAME);
+    active().focusGrid();
   }
   updateFavorite();
 }
 
 function currentFolder(): string | null {
-  return mode === "viewer" ? viewer.folder : gallery.folder;
+  return mode === "viewer" ? viewer.folder : active().folder;
 }
 
 function updateFavorite(): void {
   const folder = currentFolder();
   const on = library.isFavorite(folder);
-  gallery.setFavorite(library.isFavorite(gallery.folder));
+  for (const p of panes) p.setFavorite(library.isFavorite(p.folder));
   const button = $<HTMLButtonElement>("favorite-button");
   button.classList.toggle("on", on);
   button.disabled = !folder;
@@ -89,12 +149,14 @@ function toggleFavorite(): void {
   void library.toggle(folder);
 }
 
-async function navigate(path: string, focusPath?: string): Promise<void> {
+async function navigate(path: string, focusPath?: string, pane: Gallery = active()): Promise<void> {
   if (mode !== "browser") setMode("browser");
-  const ok = await gallery.load(path, focusPath);
+  activate(panes.indexOf(pane));
+  const ok = await pane.load(path, focusPath);
   if (!ok) return;
+  if (pane === panes[1]) saveSettings({ dualFolder: path });
   library.setActive(path);
-  void appWindow.setTitle(`${folderName(path)} - ${APP_NAME}`);
+  setTitle(`${folderName(path)} - ${APP_NAME}`);
   updateFavorite();
   void library.load();
   void tree.reveal(path);
@@ -120,12 +182,12 @@ function back(): void {
   const entry = viewer.current;
   const folder = viewer.folder;
   if (viewer.isFullscreen) void viewer.toggleFullscreen(false);
-  if (folder && !samePath(folder, gallery.folder)) {
+  if (folder && !samePath(folder, active().folder)) {
     void navigate(folder, entry?.path);
     return;
   }
   setMode("browser");
-  if (entry) gallery.reveal(entry.path);
+  if (entry) active().reveal(entry.path);
 }
 
 /** Folders open in the list; files open in the viewer, with their folder listed behind it. */
@@ -143,13 +205,14 @@ async function openPaths(paths: string[]): Promise<void> {
 
   if (paths.length === 1 && listing.folder) {
     const file = listing.entries[listing.index].path;
-    const ok = await gallery.load(listing.folder, file);
+    const pane = active();
+    const ok = await pane.load(listing.folder, file);
     if (ok) {
       library.setActive(listing.folder);
       void tree.reveal(listing.folder);
       void library.load();
-      const i = gallery.entries.findIndex((e) => samePath(e.path, file));
-      openViewer(gallery.entries, Math.max(0, i), listing.folder);
+      const i = pane.entries.findIndex((e) => samePath(e.path, file));
+      openViewer(pane.entries, Math.max(0, i), listing.folder);
       return;
     }
   }
@@ -167,9 +230,22 @@ async function chooseFolder(): Promise<void> {
   if (typeof picked === "string") await navigate(picked);
 }
 
-async function startTransfer(paths: string[], dest: string | null): Promise<void> {
-  const target = dest ?? (await open({ multiple: false, directory: true, defaultPath: gallery.folder ?? undefined }));
-  if (typeof target === "string") await transfer.start(paths, target);
+/** Without a destination: the other pane's folder in dual mode, otherwise a folder picker. */
+async function startTransfer(paths: string[], dest: string | null, from: Gallery): Promise<void> {
+  let target: string | null = dest;
+  if (!target && panes.length > 1) {
+    target = panes.find((p) => p !== from)?.folder ?? null;
+    if (!target) {
+      showToast(t.dualNoTarget);
+      return;
+    }
+  }
+  if (!target) {
+    const picked = await open({ multiple: false, directory: true, defaultPath: from.folder ?? undefined });
+    if (typeof picked !== "string") return;
+    target = picked;
+  }
+  await transfer.start(paths, target);
 }
 
 function toggleSidebar(): void {
@@ -225,7 +301,18 @@ window.addEventListener("keydown", (e) => {
     }
     viewer.handleKey(e);
   } else {
-    gallery.handleKey(e);
+    if (e.code === "F6" && !mod) {
+      e.preventDefault();
+      void toggleDual();
+      return;
+    }
+    if (e.code === "Tab" && !mod && panes.length > 1) {
+      e.preventDefault();
+      activate(1 - activeIndex);
+      active().focusGrid();
+      return;
+    }
+    active().handleKey(e);
   }
 });
 
@@ -271,15 +358,22 @@ window.addEventListener("contextmenu", (e) => e.preventDefault());
 async function init(): Promise<void> {
   await loadSettings();
   document.documentElement.style.setProperty("--sidebar", `${settings.sidebarWidth}px`);
-  gallery.applySettings();
+  makePane();
+  document.body.classList.toggle("dual-vertical", settings.dualVertical);
   setMode("browser");
   [extensions] = await Promise.all([invoke<string[]>("image_extensions"), library.load(), tree.load()]);
 
   const launch = await invoke<string[]>("take_launch_paths");
-  if (launch.length) return openPaths(launch);
-  const last = library.recentFirst;
-  if (settings.startup === "last" && last?.exists) return navigate(last.path);
-  gallery.showEmpty();
+  if (launch.length) await openPaths(launch);
+  else {
+    const last = library.recentFirst;
+    if (settings.startup === "last" && last?.exists) await navigate(last.path);
+    else panes[0].showEmpty();
+  }
+  if (settings.dual && mode === "browser") {
+    await toggleDual();
+    activate(0);
+  }
 }
 
 void init();
