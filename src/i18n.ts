@@ -97,6 +97,19 @@ const ko = {
   dualToggle: "이중 창 켜기·끄기 (F6)",
   dualLayout: "좌우 / 상하 배치",
   dualNoTarget: "반대쪽 창에서 대상 폴더를 먼저 여세요.",
+  protectedDest: "사진 앱 보관함 같은 패키지 안으로는 옮기거나 복사할 수 없습니다.",
+  copyOnly: "사진 앱 보관함 안의 파일은 보관함이 손상되지 않도록 복사만 할 수 있습니다.",
+  failReason: {
+    permission: "접근 권한이 없습니다",
+    not_found: "파일을 찾을 수 없습니다",
+    exists: "같은 이름의 파일이 있습니다",
+    no_space: "저장 공간이 부족합니다",
+    read_only: "읽기 전용 위치입니다",
+    in_use: "다른 프로그램이 파일을 사용 중입니다",
+  } as Record<string, string>,
+  permissionHintMac: "macOS가 이 위치의 접근을 막았습니다. 시스템 설정 → 개인정보 보호 및 보안 → ‘파일 및 폴더’ 또는 ‘전체 디스크 접근 권한’에서 Chojema Image+를 허용한 뒤 다시 시도하세요.",
+  permissionHintWindows: "Windows가 이 위치의 접근을 막았습니다. 파일이 다른 프로그램에서 열려 있지 않은지, 폴더에 쓰기 권한이 있는지 확인하세요.",
+  openPrivacy: "개인정보 보호 설정 열기",
 };
 
 const en: typeof ko = {
@@ -198,6 +211,19 @@ const en: typeof ko = {
   dualToggle: "Dual pane on/off (F6)",
   dualLayout: "Side by side / top and bottom",
   dualNoTarget: "Open the destination folder in the other pane first.",
+  protectedDest: "Files cannot be moved or copied into a package such as a Photos library.",
+  copyOnly: "Files inside a Photos library can only be copied, so the library is not damaged.",
+  failReason: {
+    permission: "access denied",
+    not_found: "file not found",
+    exists: "a file with the same name exists",
+    no_space: "not enough storage space",
+    read_only: "the location is read-only",
+    in_use: "the file is in use by another program",
+  },
+  permissionHintMac: "macOS blocked access to this location. Allow Chojema Image+ in System Settings → Privacy & Security → Files and Folders or Full Disk Access, then try again.",
+  permissionHintWindows: "Windows blocked access to this location. Make sure the file is not open in another program and that you can write to the folder.",
+  openPrivacy: "Open Privacy Settings",
 };
 
 export const isKorean = navigator.language.toLowerCase().startsWith("ko");

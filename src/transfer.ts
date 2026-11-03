@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { $, showToast } from "./common";
+import { $, isWindows, showToast } from "./common";
 import { errorText, t } from "./i18n";
 import { ask } from "./modal";
 import { saveSettings, settings } from "./settings";
@@ -20,6 +20,7 @@ interface Plan {
   files: PlannedFile[];
   pairs: number;
   same_folder: boolean;
+  copy_only: boolean;
 }
 
 interface Done {
@@ -73,7 +74,7 @@ export class Transfer {
     try {
       plan = await invoke<Plan>("transfer_plan", { sources, dest, includePairs: true });
     } catch (err) {
-      showToast(errorText(err));
+      showToast(err === "protected_dest" ? t.protectedDest : errorText(err));
       return;
     }
     if (plan.same_folder) {
@@ -84,13 +85,18 @@ export class Transfer {
     const images = plan.files.filter((f) => !f.pair).length;
     const answer = await ask({
       title: t.transferTitle(images, folderName(dest)),
-      message: dest,
+      message: plan.copy_only ? `${dest}\n\n${t.copyOnly}` : dest,
       checkbox: plan.pairs ? { label: t.includePairs(plan.pairs), checked: settings.includePairs } : undefined,
-      choices: [
-        { id: "move", label: t.move, primary: true },
-        { id: "copy", label: t.copy },
-        { id: "cancel", label: t.cancel },
-      ],
+      choices: plan.copy_only
+        ? [
+            { id: "copy", label: t.copy, primary: true },
+            { id: "cancel", label: t.cancel },
+          ]
+        : [
+            { id: "move", label: t.move, primary: true },
+            { id: "copy", label: t.copy },
+            { id: "cancel", label: t.cancel },
+          ],
       cancel: "cancel",
     });
     if (answer.choice === "cancel") return;
@@ -179,13 +185,23 @@ export class Transfer {
   }
 
   private async reportFailures(failed: { src: string; error: string }[]): Promise<void> {
-    const lines = failed.slice(0, 5).map((f) => `${baseName(f.src)}: ${f.error}`);
+    const describe = (code: string) => {
+      if (code.startsWith("other:")) return code.slice(6);
+      return t.failReason[code] ?? code;
+    };
+    const lines = failed.slice(0, 5).map((f) => `${baseName(f.src)}: ${describe(f.error)}`);
     if (failed.length > 5) lines.push(t.andMore(failed.length - 5));
-    await ask({
+    const permission = failed.some((f) => f.error === "permission");
+    if (permission) lines.push("", isWindows ? t.permissionHintWindows : t.permissionHintMac);
+    const a = await ask({
       title: t.failedTitle(failed.length),
       message: lines.join("\n"),
-      choices: [{ id: "ok", label: t.close, primary: true }],
+      choices: [
+        ...(permission ? [{ id: "settings", label: t.openPrivacy }] : []),
+        { id: "ok", label: t.close, primary: true },
+      ],
       cancel: "ok",
     });
+    if (a.choice === "settings") void invoke("open_privacy_settings");
   }
 }

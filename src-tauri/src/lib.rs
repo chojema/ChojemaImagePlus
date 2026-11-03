@@ -155,6 +155,17 @@ async fn transfer_run(
     .map_err(|_| "failed".to_string())
 }
 
+/// Opens the system privacy settings where file access for the app is granted.
+#[tauri::command]
+fn open_privacy_settings() {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("/usr/bin/open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")
+        .spawn();
+    #[cfg(windows)]
+    let _ = std::process::Command::new("explorer.exe").arg("ms-settings:privacy-broadfilesystemaccess").spawn();
+}
+
 #[tauri::command]
 fn transfer_cancel(cancel: tauri::State<TransferCancel>) {
     cancel.0.store(true, Ordering::Relaxed);
@@ -255,7 +266,8 @@ pub fn run() {
             transfer_plan,
             transfer_run,
             transfer_cancel,
-            transfer_undo
+            transfer_undo,
+            open_privacy_settings
         ])
         .build(tauri::generate_context!())
         .expect("failed to build application");

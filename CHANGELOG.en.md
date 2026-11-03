@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1
+
+- Move/copy failures now explain the reason (access denied, not enough space, file in use, …), with a button to open Privacy settings for permission problems
+- Retries with a plain copy when the system copy is refused; locations that cannot be renamed into are handled by copy-then-delete (the copy is withdrawn if the original cannot be removed)
+- macOS: moving replaced or undone files to the trash no longer needs extra permissions
+- macOS: packages such as Photos libraries are hidden from the folder tree, and files inside them can only be copied
+
 ## 0.6.0
 
 - Dual pane (F6): split the list into two panes, side by side or top and bottom

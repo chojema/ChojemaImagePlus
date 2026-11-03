@@ -35,6 +35,8 @@ pub struct Plan {
     pub files: Vec<PlannedFile>,
     pub pairs: usize,
     pub same_folder: bool,
+    /// Sources lie inside a photo library package, whose files must not be moved out.
+    pub copy_only: bool,
 }
 
 #[derive(Deserialize)]
@@ -112,10 +114,19 @@ fn pairs_of(image: &Path) -> Vec<PathBuf> {
     found
 }
 
+/// Inside a macOS package such as a Photos library, where outside changes corrupt the package.
+pub fn in_package(path: &Path) -> bool {
+    path.ancestors().any(|p| crate::folders::is_package(p))
+}
+
 pub fn plan(sources: &[String], dest: &Path, include_pairs: bool) -> Result<Plan, String> {
     if !dest.is_dir() {
         return Err("not_found".into());
     }
+    if in_package(dest) {
+        return Err("protected_dest".into());
+    }
+    let copy_only = sources.iter().any(|s| in_package(Path::new(s)));
     let mut seen = HashSet::new();
     let mut files = Vec::new();
     let mut pairs = 0;
@@ -148,7 +159,7 @@ pub fn plan(sources: &[String], dest: &Path, include_pairs: bool) -> Result<Plan
             });
         }
     }
-    Ok(Plan { files, pairs, same_folder })
+    Ok(Plan { files, pairs, same_folder, copy_only })
 }
 
 /// Target names for a group with ` (n)` after the main file's stem, e.g. `A (2).jpg`,
@@ -169,35 +180,104 @@ fn renamed_group(dir: &Path, names: &[String]) -> Vec<String> {
         .expect("unbounded range")
 }
 
-fn is_cross_device(err: &io::Error) -> bool {
-    // EXDEV on Unix, ERROR_NOT_SAME_DEVICE on Windows.
-    err.kind() == io::ErrorKind::CrossesDevices || matches!(err.raw_os_error(), Some(18) if cfg!(unix)) || matches!(err.raw_os_error(), Some(17) if cfg!(windows))
+/// A short reason code the interface turns into a localized explanation.
+fn reason(err: &io::Error) -> String {
+    use io::ErrorKind::*;
+    let code = match err.kind() {
+        PermissionDenied => "permission",
+        NotFound => "not_found",
+        AlreadyExists => "exists",
+        StorageFull | QuotaExceeded => "no_space",
+        ReadOnlyFilesystem => "read_only",
+        ResourceBusy => "in_use",
+        _ => match err.raw_os_error() {
+            Some(1) if cfg!(unix) => "permission",
+            Some(32) | Some(33) if cfg!(windows) => "in_use",
+            _ => "",
+        },
+    };
+    if code.is_empty() {
+        format!("other:{err}")
+    } else {
+        code.to_string()
+    }
 }
 
-fn copy_preserving_time(from: &Path, to: &Path) -> io::Result<()> {
-    fs::copy(from, to)?;
+/// Moves a file to the trash without needing extra permissions (on macOS, no Finder automation).
+pub fn to_trash(path: &Path) -> io::Result<()> {
+    #[cfg(target_os = "macos")]
+    let result = {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        let mut ctx = trash::TrashContext::default();
+        ctx.set_delete_method(DeleteMethod::NsFileManager);
+        ctx.delete(path)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let result = trash::delete(path);
+    result.map_err(|e| match e {
+        trash::Error::Os { code, .. } => io::Error::from_raw_os_error(code),
+        other => io::Error::other(other.to_string()),
+    })
+}
+
+fn set_mtime_from(from: &Path, to: &Path) {
     if let Ok(meta) = fs::metadata(from) {
         let mtime = filetime::FileTime::from_last_modification_time(&meta);
         let _ = filetime::set_file_mtime(to, mtime);
     }
+}
+
+/// Plain byte copy, used when the system copy (cloning, extended attributes) is refused.
+fn stream_copy(from: &Path, to: &Path) -> io::Result<()> {
+    let mut reader = fs::File::open(from)?;
+    let mut writer = fs::File::create_new(to)?;
+    let result = io::copy(&mut reader, &mut writer).and_then(|_| writer.sync_all());
+    if result.is_err() {
+        drop(writer);
+        let _ = fs::remove_file(to);
+    }
+    result
+}
+
+fn copy_file(from: &Path, to: &Path) -> io::Result<()> {
+    match fs::copy(from, to) {
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound && !from.exists() => return Err(e),
+        Err(first) => {
+            if to.exists() && fs::metadata(to).map(|m| m.len()).ok() != fs::metadata(from).map(|m| m.len()).ok() {
+                let _ = fs::remove_file(to);
+            }
+            if let Err(e) = stream_copy(from, to) {
+                // Report the original error when the fallback fails for the same reason.
+                return Err(if e.kind() == first.kind() { first } else { e });
+            }
+        }
+    }
+    set_mtime_from(from, to);
     Ok(())
 }
 
-/// Renames when possible; across drives copies first and removes the original only after the copy is complete.
+/// Renames when possible. Otherwise (another drive, a cloud folder, …) copies, checks the size,
+/// and removes the original; if the original cannot be removed the copy is withdrawn.
 fn move_file(from: &Path, to: &Path) -> io::Result<()> {
-    match fs::rename(from, to) {
-        Ok(()) => Ok(()),
-        Err(e) if is_cross_device(&e) => {
-            copy_preserving_time(from, to)?;
-            let ok = fs::metadata(to).map(|m| m.len()).ok() == fs::metadata(from).map(|m| m.len()).ok();
-            if !ok {
-                let _ = fs::remove_file(to);
-                return Err(io::Error::other("copy incomplete"));
-            }
-            fs::remove_file(from)
-        }
-        Err(e) => Err(e),
+    let err = match fs::rename(from, to) {
+        Ok(()) => return Ok(()),
+        Err(e) => e,
+    };
+    if matches!(err.kind(), io::ErrorKind::NotFound | io::ErrorKind::AlreadyExists) {
+        return Err(err);
     }
+    copy_file(from, to)?;
+    let same_size = fs::metadata(to).map(|m| m.len()).ok() == fs::metadata(from).map(|m| m.len()).ok();
+    if !same_size {
+        let _ = fs::remove_file(to);
+        return Err(io::Error::other("copy incomplete"));
+    }
+    if let Err(e) = fs::remove_file(from) {
+        let _ = fs::remove_file(to);
+        return Err(e);
+    }
+    Ok(())
 }
 
 pub fn run(
@@ -245,19 +325,19 @@ pub fn run(
                     outcome.skipped += 1;
                     continue;
                 }
-                if let Err(e) = trash::delete(&target) {
-                    outcome.failed.push(Failure { src: job.src.clone(), error: e.to_string() });
+                if let Err(e) = to_trash(&target) {
+                    outcome.failed.push(Failure { src: job.src.clone(), error: reason(&e) });
                     continue;
                 }
                 outcome.overwritten += 1;
             }
             let result = match mode {
                 Mode::Move => move_file(&src, &target),
-                Mode::Copy => copy_preserving_time(&src, &target),
+                Mode::Copy => copy_file(&src, &target),
             };
             match result {
                 Ok(()) => outcome.done.push(Done { from: job.src.clone(), to: target.to_string_lossy().into_owned() }),
-                Err(e) => outcome.failed.push(Failure { src: job.src.clone(), error: e.to_string() }),
+                Err(e) => outcome.failed.push(Failure { src: job.src.clone(), error: reason(&e) }),
             }
         }
     }
@@ -273,11 +353,11 @@ pub fn undo(mode: Mode, items: &[Done]) -> Outcome {
         let result = match mode {
             Mode::Move if to.exists() => Err(io::Error::new(io::ErrorKind::AlreadyExists, "original location is taken")),
             Mode::Move => move_file(from, to),
-            Mode::Copy => trash::delete(from).map_err(|e| io::Error::other(e.to_string())),
+            Mode::Copy => to_trash(from),
         };
         match result {
             Ok(()) => outcome.done.push(Done { from: item.to.clone(), to: item.from.clone() }),
-            Err(e) => outcome.failed.push(Failure { src: item.to.clone(), error: e.to_string() }),
+            Err(e) => outcome.failed.push(Failure { src: item.to.clone(), error: reason(&e) }),
         }
     }
     outcome
@@ -286,6 +366,27 @@ pub fn undo(mode: Mode, items: &[Done]) -> Outcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reasons_are_classified() {
+        assert_eq!(reason(&io::Error::from(io::ErrorKind::PermissionDenied)), "permission");
+        assert_eq!(reason(&io::Error::from(io::ErrorKind::StorageFull)), "no_space");
+        assert!(reason(&io::Error::other("boom")).starts_with("other:"));
+    }
+
+    #[test]
+    fn photo_library_sources_are_copy_only() {
+        let (base, a, b) = setup("package");
+        let lib = a.join("Photos Library.photoslibrary").join("originals");
+        fs::create_dir_all(&lib).unwrap();
+        fs::write(lib.join("p.jpg"), "x").unwrap();
+        let p = plan(&[lib.join("p.jpg").to_string_lossy().into_owned()], &b, true).unwrap();
+        assert_eq!(p.copy_only, cfg!(target_os = "macos"));
+        if cfg!(target_os = "macos") {
+            assert!(plan(&[], &lib, true).is_err());
+        }
+        let _ = fs::remove_dir_all(base);
+    }
 
     fn setup(name: &str) -> (PathBuf, PathBuf, PathBuf) {
         let base = std::env::temp_dir().join(format!("image-plus-transfer-{name}-{}", std::process::id()));

@@ -16,7 +16,27 @@ pub struct Roots {
     pub drives: Vec<Folder>,
 }
 
+/// macOS packages appear as single files in Finder; browsing or changing their insides
+/// (a Photos library, an app bundle) can damage them.
+pub fn is_package(path: &Path) -> bool {
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    const PACKAGES: &[&str] = &[
+        "photoslibrary", "photolibrary", "aplibrary", "migratedphotolibrary", "musiclibrary", "tvlibrary",
+        "app", "bundle", "framework", "plugin", "kext", "appex", "xpc", "lrlibrary", "lrdata", "fcpbundle",
+        "imovielibrary", "theater", "rtfd", "pages", "numbers", "key", "xcodeproj", "xcworkspace",
+    ];
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| PACKAGES.contains(&e.to_ascii_lowercase().as_str()))
+        && path.is_dir()
+}
+
 fn hidden(path: &Path, meta: &fs::Metadata) -> bool {
+    if is_package(path) {
+        return true;
+    }
     let dot = path
         .file_name()
         .and_then(|n| n.to_str())
