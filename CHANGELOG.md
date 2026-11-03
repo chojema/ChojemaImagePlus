@@ -1,5 +1,9 @@
 # 변경 내역
 
+## 0.9.1
+
+- 포함된 WebP 라이브러리의 라이선스 고지를 THIRD-PARTY-NOTICES.txt에 추가
+
 ## 0.9.0
 
 - 다른 형식으로 내보내기(Ctrl/⌘ + E, 오른쪽 클릭): JPEG, PNG, WebP, AVIF, HEIC(macOS), TIFF, BMP

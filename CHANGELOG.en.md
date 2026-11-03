@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1
+
+- Added the bundled WebP library's license to THIRD-PARTY-NOTICES.txt
+
 ## 0.9.0
 
 - Export to another format (Ctrl/⌘ + E, right-click): JPEG, PNG, WebP, AVIF, HEIC (macOS), TIFF, BMP
