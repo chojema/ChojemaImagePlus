@@ -63,6 +63,8 @@ const ko = {
   clearCache: "저장된 썸네일 지우기",
   cacheCleared: "저장된 썸네일을 지웠습니다.",
   close: "닫기",
+  language: "언어 · Language",
+  languageSystem: "시스템 설정 따르기 · System",
   compare: "나란히 비교 (C) — 2~4장 선택",
   compareNeed: "비교할 이미지를 2~4장 선택하세요.",
   compareTooMany: "한 번에 4장까지 비교할 수 있습니다.",
@@ -244,6 +246,8 @@ const en: typeof ko = {
   clearCache: "Delete stored thumbnails",
   cacheCleared: "Stored thumbnails deleted.",
   close: "Close",
+  language: "Language · 언어",
+  languageSystem: "Follow system · 시스템 설정",
   compare: "Compare side by side (C) — select 2 to 4",
   compareNeed: "Select 2 to 4 images to compare.",
   compareTooMany: "You can compare up to 4 images at once.",
@@ -366,8 +370,30 @@ const en: typeof ko = {
   exNoPane: "No folder is open in the other pane.",
 };
 
-export const isKorean = navigator.language.toLowerCase().startsWith("ko");
+export type Language = "system" | "ko" | "en";
+
+/** The chosen interface language, mirrored here so the first paint already uses it. */
+export const LANGUAGE_KEY = "chojema-image-plus.language";
+
+export function storedLanguage(): Language {
+  try {
+    const v = localStorage.getItem(LANGUAGE_KEY);
+    if (v === "ko" || v === "en") return v;
+  } catch {
+    // Storage may be unavailable; fall back to the system language.
+  }
+  return "system";
+}
+
+export function resolveLanguage(choice: Language): "ko" | "en" {
+  if (choice !== "system") return choice;
+  return navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
+}
+
+export const currentLanguage = resolveLanguage(storedLanguage());
+export const isKorean = currentLanguage === "ko";
 export const t = isKorean ? ko : en;
+document.documentElement.lang = currentLanguage;
 
 export function errorText(code: unknown): string {
   switch (code) {

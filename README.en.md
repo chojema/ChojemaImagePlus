@@ -33,7 +33,7 @@ A lightweight, fast image viewer for Windows and macOS.
   - Photo orientation is applied to the pixels and the originals are never changed; you are asked about name conflicts.
 - Favorite folders (add, remove, rename, reorder) and a recent folders list
 - Drag and drop, open several files at once, image file associations (open with a double-click)
-- Settings: screen shown when the app opens (last folder / empty screen), delete stored thumbnails
+- Settings: interface language (follow system / 한국어 / English), screen shown when the app opens (last folder / empty screen), delete stored thumbnails
 
 ## Supported formats
 

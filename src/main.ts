@@ -6,12 +6,12 @@ import { $, Entry, parentOf, samePath, setWindowTitle, showToast } from "./commo
 import { Compare } from "./compare";
 import { Exporter } from "./exporter";
 import { Gallery } from "./gallery";
-import { errorText, t } from "./i18n";
+import { errorText, Language, t } from "./i18n";
 import { Library } from "./library";
 import { menuOpen } from "./menu";
 import { modalOpen } from "./modal";
 import { Transfer } from "./transfer";
-import { loadSettings, saveSettings, settings, SettingsDialog } from "./settings";
+import { loadSettings, saveSettings, settings, SettingsDialog, syncLanguage } from "./settings";
 import { Slideshow, SlideshowDialog } from "./slideshow";
 import { FolderTree } from "./tree";
 import { Viewer } from "./viewer";
@@ -122,7 +122,29 @@ async function trashFromViewer(path: string): Promise<void> {
 }
 const transfer = new Transfer(() => panes.forEach((p) => p.folder && p.command("refresh")));
 const compare = new Compare({ back: () => backFromCompare() });
-const settingsDialog = new SettingsDialog();
+const settingsDialog = new SettingsDialog((choice) => applyLanguage(choice));
+const RESTORE_KEY = "chojema-image-plus.restore";
+
+/** Redraws the interface in the new language, reopening the same folders afterwards. */
+function applyLanguage(choice: Language): void {
+  if (!syncLanguage(choice)) return;
+  try {
+    sessionStorage.setItem(RESTORE_KEY, JSON.stringify({ folder: panes[0]?.folder ?? null, active: activeIndex }));
+  } catch {
+    // Without session storage the start-up setting decides what opens.
+  }
+  location.reload();
+}
+
+function takeRestore(): { folder: string | null; active: number } | null {
+  try {
+    const raw = sessionStorage.getItem(RESTORE_KEY);
+    sessionStorage.removeItem(RESTORE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 const exporter = new Exporter(
   (failed) => transfer.reportFailures(failed),
   () => panes.forEach((p) => p.folder && p.command("refresh")),
@@ -415,6 +437,12 @@ window.addEventListener("contextmenu", (e) => e.preventDefault());
 
 async function init(): Promise<void> {
   await loadSettings();
+  // The mirror can be missing (first start after an update, cleared storage): redraw once.
+  if (syncLanguage(settings.language)) {
+    location.reload();
+    return;
+  }
+  const restore = takeRestore();
   document.documentElement.style.setProperty("--sidebar", `${settings.sidebarWidth}px`);
   makePane();
   document.body.classList.toggle("dual-vertical", settings.dualVertical);
@@ -423,6 +451,7 @@ async function init(): Promise<void> {
 
   const launch = await invoke<string[]>("take_launch_paths");
   if (launch.length) await openPaths(launch);
+  else if (restore?.folder) await navigate(restore.folder);
   else {
     const last = library.recentFirst;
     if (settings.startup === "last" && last?.exists) await navigate(last.path);
@@ -430,7 +459,7 @@ async function init(): Promise<void> {
   }
   if (settings.dual && mode === "browser") {
     await toggleDual();
-    activate(0);
+    activate(restore?.active === 1 ? 1 : 0);
   }
 }
 

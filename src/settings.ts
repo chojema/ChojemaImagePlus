@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { $, showToast } from "./common";
-import { t } from "./i18n";
+import { currentLanguage, Language, LANGUAGE_KEY, resolveLanguage, t } from "./i18n";
 
 export type SortKey = "name" | "date" | "size";
 
 export interface Settings {
+  language: Language;
   startup: "last" | "empty";
   sort: SortKey;
   sortDesc: boolean;
@@ -38,6 +39,7 @@ export interface Settings {
 }
 
 const defaults: Settings = {
+  language: "system",
   startup: "last",
   sort: "name",
   sortDesc: false,
@@ -77,6 +79,17 @@ export async function loadSettings(): Promise<void> {
   Object.assign(settings, defaults, stored);
 }
 
+/** Mirrors the language choice for the next start; true when the interface must be redrawn. */
+export function syncLanguage(choice: Language): boolean {
+  try {
+    if (choice === "system") localStorage.removeItem(LANGUAGE_KEY);
+    else localStorage.setItem(LANGUAGE_KEY, choice);
+  } catch {
+    return false;
+  }
+  return resolveLanguage(choice) !== currentLanguage;
+}
+
 export function saveSettings(changes: Partial<Settings>): void {
   Object.assign(settings, changes);
   void invoke("settings_set", { values: changes });
@@ -86,8 +99,17 @@ export function saveSettings(changes: Partial<Settings>): void {
 export class SettingsDialog {
   private readonly root = $("settings");
 
-  constructor() {
+  constructor(private readonly onLanguage: (choice: Language) => void) {
     $("settings-title").textContent = t.settings;
+    $("language-legend").textContent = t.language;
+    $("language-system").textContent = t.languageSystem;
+    for (const radio of this.root.querySelectorAll<HTMLInputElement>('input[name="language"]')) {
+      radio.addEventListener("change", () => {
+        if (!radio.checked) return;
+        saveSettings({ language: radio.value as Language });
+        this.onLanguage(radio.value as Language);
+      });
+    }
     $("startup-legend").textContent = t.startup;
     $("startup-last").textContent = t.startupLast;
     $("startup-empty").textContent = t.startupEmpty;
@@ -117,6 +139,9 @@ export class SettingsDialog {
   open(): void {
     for (const radio of this.root.querySelectorAll<HTMLInputElement>('input[name="startup"]')) {
       radio.checked = radio.value === settings.startup;
+    }
+    for (const radio of this.root.querySelectorAll<HTMLInputElement>('input[name="language"]')) {
+      radio.checked = radio.value === settings.language;
     }
     this.root.hidden = false;
     $("settings-close").focus();

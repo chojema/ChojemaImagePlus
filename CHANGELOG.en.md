@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.0
+
+- Interface language: choose follow system / 한국어 / English in Settings (Ctrl/⌘ + ,); applies immediately and keeps the open folders
+
 ## 0.10.0
 
 - Large folders open instantly: virtual scrolling renders only the visible cells
