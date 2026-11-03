@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Large folders open instantly: virtual scrolling renders only the visible cells
+- Faster thumbnails: macOS ImageIO (reduced-size decoding, embedded previews), system codecs on Windows
+- Thumbnails on screen are made first; the rest are prepared in the background with spare capacity
+- The list updates automatically when the folder changes, keeping selection and scroll position
+
 ## 0.9.1
 
 - Added the bundled WebP library's license to THIRD-PARTY-NOTICES.txt

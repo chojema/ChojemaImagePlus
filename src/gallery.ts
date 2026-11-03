@@ -37,6 +37,10 @@ export class Gallery {
   private anchor = -1;
   private loadToken = 0;
   private suppressClick = false;
+  private readonly canvas = document.createElement("div");
+  private readonly cells = new Map<number, HTMLElement>();
+  private metrics = { cols: 1, cellW: 0, cellH: 0, rowH: 0, pad: 10, gap: 6 };
+  private frame = 0;
 
   readonly root: HTMLElement;
   private readonly grid: HTMLElement;
@@ -111,6 +115,10 @@ export class Gallery {
     q("empty-open-file").addEventListener("click", () => hooks.chooseFile());
     q("empty-open-folder").addEventListener("click", () => hooks.chooseFolder());
 
+    this.canvas.className = "grid-canvas";
+    this.grid.append(this.canvas);
+    this.grid.addEventListener("scroll", () => this.schedule(), { passive: true });
+    new ResizeObserver(() => this.relayout()).observe(this.grid);
     this.bindDrag();
     this.grid.addEventListener("click", (e) => {
       if (this.suppressClick) {
@@ -181,6 +189,7 @@ export class Gallery {
 
   private applySize(): void {
     this.grid.style.setProperty("--thumb", `${this.size.value}px`);
+    this.relayout();
   }
 
   private updateSortDir(): void {
@@ -271,14 +280,46 @@ export class Gallery {
       this.focus = i;
       this.anchor = i;
       this.selected = i >= 0 ? new Set([i]) : new Set();
+      this.grid.scrollTop = 0;
       this.render();
       if (i >= 0) this.scrollTo(i);
-      else this.grid.scrollTop = 0;
+      this.prefetch();
       return true;
     } catch (err) {
       this.hooks.toast(errorText(err));
       return false;
     }
+  }
+
+  /** Re-reads the folder after outside changes, keeping selection, focus and scroll position. */
+  async refreshQuiet(): Promise<void> {
+    if (!this.folder) return;
+    const dir = this.folder;
+    const token = ++this.loadToken;
+    let entries: Entry[];
+    try {
+      entries = await invoke<Entry[]>("browse", { dir });
+    } catch {
+      return;
+    }
+    if (token !== this.loadToken || dir !== this.folder) return;
+    const chosen = new Set([...this.selected].map((i) => this.entries[i]?.path));
+    const focusPath = this.entries[this.focus]?.path;
+    const anchorPath = this.entries[this.anchor]?.path;
+    const top = this.grid.scrollTop;
+    this.entries = this.sorted(entries);
+    this.selected = new Set(this.entries.flatMap((e, i) => (chosen.has(e.path) ? [i] : [])));
+    this.focus = focusPath ? this.entries.findIndex((e) => e.path === focusPath) : -1;
+    this.anchor = anchorPath ? this.entries.findIndex((e) => e.path === anchorPath) : -1;
+    this.render();
+    this.grid.scrollTop = top;
+    this.schedule();
+    this.prefetch();
+  }
+
+  /** Lets the backend render the rest of the folder's thumbnails while the user looks around. */
+  private prefetch(): void {
+    if (this.entries.length) void invoke("thumbs_prefetch", { paths: this.entries.map((e) => e.path) });
   }
 
   /** Moves the selection to `path`, typically after returning from the viewer. */
@@ -327,30 +368,107 @@ export class Gallery {
     if (this.folder) this.root.dataset.drop = this.folder;
     else delete this.root.dataset.drop;
 
-    const fragment = document.createDocumentFragment();
-    this.entries.forEach((entry, i) => {
-      const cell = document.createElement("div");
-      cell.className = "cell";
-      cell.dataset.index = String(i);
-      cell.title = `${entry.name}\n${formatSize(entry.size)} · ${new Date(entry.modified).toLocaleString()}`;
-      const frame = document.createElement("div");
-      frame.className = "frame";
-      const img = document.createElement("img");
-      img.loading = "lazy";
-      img.decoding = "async";
-      img.draggable = false;
-      img.alt = "";
-      img.src = this.thumbSrc(entry);
-      img.addEventListener("error", () => frame.classList.add("broken"), { once: true });
-      frame.append(img);
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = entry.name;
-      cell.append(frame, name);
-      fragment.append(cell);
-    });
-    this.grid.replaceChildren(fragment);
+    for (const cell of this.cells.values()) cell.remove();
+    this.cells.clear();
+    this.relayout();
     this.paintSelection();
+  }
+
+  // Virtual scrolling: only the rows in view (plus a margin) exist as elements, so a folder
+  // of any size opens at once and thumbnails are requested for what is on screen first.
+
+  private computeMetrics(): void {
+    const pad = 10;
+    const gap = 6;
+    const width = Math.max(0, this.grid.clientWidth - pad * 2);
+    const thumb = Number(this.size.value) || 160;
+    const cols = Math.max(1, Math.floor((width + gap) / (thumb + gap)));
+    const cellW = cols > 0 ? (width - gap * (cols - 1)) / cols : thumb;
+    const cellH = cellW + 20;
+    this.metrics = { cols, cellW, cellH, rowH: cellH + gap, pad, gap };
+  }
+
+  private relayout(): void {
+    const before = this.metrics;
+    this.computeMetrics();
+    const m = this.metrics;
+    const rows = Math.ceil(this.entries.length / m.cols);
+    this.canvas.style.height = `${rows ? rows * m.rowH - m.gap + m.pad * 2 : 0}px`;
+    if (before.cols !== m.cols || before.cellW !== m.cellW) {
+      for (const [i, cell] of this.cells) this.place(cell, i);
+    }
+    this.renderVisible();
+  }
+
+  private schedule(): void {
+    if (this.frame) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0;
+      this.renderVisible();
+    });
+  }
+
+  private place(cell: HTMLElement, i: number): void {
+    const m = this.metrics;
+    const row = Math.floor(i / m.cols);
+    const col = i % m.cols;
+    cell.style.transform = `translate(${m.pad + col * (m.cellW + m.gap)}px, ${m.pad + row * m.rowH}px)`;
+    cell.style.width = `${m.cellW}px`;
+    cell.style.height = `${m.cellH}px`;
+  }
+
+  private renderVisible(): void {
+    const m = this.metrics;
+    if (!this.entries.length || !m.rowH) {
+      for (const cell of this.cells.values()) cell.remove();
+      this.cells.clear();
+      return;
+    }
+    const overscan = 2;
+    const top = this.grid.scrollTop - m.pad;
+    const firstRow = Math.max(0, Math.floor(top / m.rowH) - overscan);
+    const lastRow = Math.floor((top + this.grid.clientHeight) / m.rowH) + overscan;
+    const first = firstRow * m.cols;
+    const last = Math.min(this.entries.length - 1, (lastRow + 1) * m.cols - 1);
+    for (const [i, cell] of this.cells) {
+      if (i < first || i > last) {
+        cell.remove();
+        this.cells.delete(i);
+      }
+    }
+    const fragment = document.createDocumentFragment();
+    for (let i = first; i <= last; i++) {
+      if (this.cells.has(i)) continue;
+      const cell = this.makeCell(i);
+      this.place(cell, i);
+      this.cells.set(i, cell);
+      fragment.append(cell);
+    }
+    this.canvas.append(fragment);
+  }
+
+  private makeCell(i: number): HTMLElement {
+    const entry = this.entries[i];
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    if (this.selected.has(i)) cell.classList.add("selected");
+    if (i === this.focus) cell.classList.add("focus");
+    cell.dataset.index = String(i);
+    cell.title = `${entry.name}\n${formatSize(entry.size)} · ${new Date(entry.modified).toLocaleString()}`;
+    const frame = document.createElement("div");
+    frame.className = "frame";
+    const img = document.createElement("img");
+    img.decoding = "async";
+    img.draggable = false;
+    img.alt = "";
+    img.src = this.thumbSrc(entry);
+    img.addEventListener("error", () => frame.classList.add("broken"), { once: true });
+    frame.append(img);
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = entry.name;
+    cell.append(frame, name);
+    return cell;
   }
 
   private renderCrumbs(): void {
@@ -382,10 +500,9 @@ export class Gallery {
   }
 
   private paintSelection(): void {
-    const cells = this.grid.children;
-    for (let i = 0; i < cells.length; i++) {
-      cells[i].classList.toggle("selected", this.selected.has(i));
-      cells[i].classList.toggle("focus", i === this.focus);
+    for (const [i, cell] of this.cells) {
+      cell.classList.toggle("selected", this.selected.has(i));
+      cell.classList.toggle("focus", i === this.focus);
     }
     this.count.textContent = this.folder ? t.count(this.entries.length, this.selected.size) : "";
     const n = this.selected.size;
@@ -427,16 +544,18 @@ export class Gallery {
   }
 
   private scrollTo(i: number): void {
-    (this.grid.children[i] as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" });
+    const m = this.metrics;
+    if (!m.rowH) return;
+    const top = m.pad + Math.floor(i / m.cols) * m.rowH;
+    const bottom = top + m.cellH;
+    const view = this.grid.clientHeight;
+    if (top < this.grid.scrollTop) this.grid.scrollTop = top - m.pad;
+    else if (bottom > this.grid.scrollTop + view) this.grid.scrollTop = bottom - view + m.pad;
+    this.renderVisible();
   }
 
   private columns(): number {
-    const cells = this.grid.children;
-    if (cells.length < 2) return 1;
-    const top = (cells[0] as HTMLElement).offsetTop;
-    let n = 1;
-    while (n < cells.length && (cells[n] as HTMLElement).offsetTop === top) n++;
-    return n;
+    return this.metrics.cols;
   }
 
   /** Opens the viewer: on the selection when several images are selected, otherwise on the whole folder. */

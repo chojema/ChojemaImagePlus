@@ -61,6 +61,12 @@ function makePane(): Gallery {
   return pane;
 }
 
+/** Keeps the backend watching exactly the folders shown in the panes. */
+function watchPanes(): void {
+  const folders = panes.map((p) => p.folder).filter((f): f is string => !!f);
+  void invoke("watch_folders", { folders });
+}
+
 function activate(i: number): void {
   if (i < 0 || i >= panes.length) return;
   const changed = i !== activeIndex;
@@ -80,6 +86,7 @@ async function toggleDual(): Promise<void> {
     second.root.remove();
     document.body.classList.remove("dual");
     saveSettings({ dual: false });
+    watchPanes();
     activeIndex = -1;
     activate(0);
     return;
@@ -92,6 +99,7 @@ async function toggleDual(): Promise<void> {
     if (panes[0].folder) await pane.load(panes[0].folder);
   }
   if (!pane.folder) pane.showEmpty();
+  watchPanes();
   activate(1);
 }
 
@@ -190,6 +198,7 @@ async function navigate(path: string, focusPath?: string, pane: Gallery = active
   activate(panes.indexOf(pane));
   const ok = await pane.load(path, focusPath);
   if (!ok) return;
+  watchPanes();
   if (pane === panes[1]) saveSettings({ dualFolder: path });
   library.setActive(path);
   setTitle(`${folderName(path)} - ${APP_NAME}`);
@@ -244,6 +253,7 @@ async function openPaths(paths: string[]): Promise<void> {
     const pane = active();
     const ok = await pane.load(listing.folder, file);
     if (ok) {
+      watchPanes();
       library.setActive(listing.folder);
       void tree.reveal(listing.folder);
       void library.load();
@@ -397,6 +407,9 @@ void getCurrentWebview().onDragDropEvent((event) => {
 });
 
 void listen<string[]>("open-paths", (event) => void openPaths(event.payload));
+void listen<string>("folder-changed", (event) => {
+  for (const p of panes) if (samePath(p.folder, event.payload)) void p.refreshQuiet();
+});
 
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 

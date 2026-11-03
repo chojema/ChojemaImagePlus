@@ -5,6 +5,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::UNIX_EPOCH;
 
@@ -14,20 +15,31 @@ const FORMAT_VERSION: u32 = 1;
 const CACHE_LIMIT: u64 = 1024 * 1024 * 1024;
 const CACHE_TARGET: u64 = 768 * 1024 * 1024;
 
+#[derive(Default)]
+struct Queue {
+    busy: usize,
+    /// Tickets of waiting on-screen requests; the newest is served first.
+    waiting: Vec<u64>,
+    next: u64,
+}
+
 /// Thumbnails rendered on demand and cached on disk, keyed by path, size and modification time.
+/// Requests for what is on screen now go first (newest first, since scrolling makes older
+/// requests stale); background prefetching only uses capacity nobody else is waiting for.
 pub struct Thumbs {
     dir: PathBuf,
-    busy: Mutex<usize>,
+    queue: Mutex<Queue>,
     freed: Condvar,
     limit: usize,
+    prefetch: AtomicU64,
 }
 
 struct Permit<'a>(&'a Thumbs);
 
 impl Drop for Permit<'_> {
     fn drop(&mut self) {
-        *self.0.busy.lock().unwrap() -= 1;
-        self.0.freed.notify_one();
+        self.0.queue.lock().unwrap().busy -= 1;
+        self.0.freed.notify_all();
     }
 }
 
@@ -36,19 +48,44 @@ impl Thumbs {
         let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
         Thumbs {
             dir,
-            busy: Mutex::new(0),
+            queue: Mutex::new(Queue::default()),
             freed: Condvar::new(),
             limit: cores.saturating_sub(1).clamp(2, 8),
+            prefetch: AtomicU64::new(0),
         }
     }
 
-    fn permit(&self) -> Permit<'_> {
-        let mut busy = self.busy.lock().unwrap();
-        while *busy >= self.limit {
-            busy = self.freed.wait(busy).unwrap();
+    fn permit(&self, background: bool) -> Permit<'_> {
+        let mut q = self.queue.lock().unwrap();
+        if background {
+            let cap = (self.limit / 2).max(1);
+            while q.busy >= cap || !q.waiting.is_empty() {
+                q = self.freed.wait(q).unwrap();
+            }
+        } else {
+            let ticket = q.next;
+            q.next += 1;
+            q.waiting.push(ticket);
+            while q.busy >= self.limit || q.waiting.last() != Some(&ticket) {
+                q = self.freed.wait(q).unwrap();
+            }
+            q.waiting.pop();
+            self.freed.notify_all();
         }
-        *busy += 1;
+        q.busy += 1;
         Permit(self)
+    }
+
+    /// Renders missing thumbnails for `paths` in the background, in order. A newer call
+    /// supersedes an older one.
+    pub fn prefetch(&self, paths: Vec<PathBuf>) {
+        let generation = self.prefetch.fetch_add(1, Ordering::SeqCst) + 1;
+        for path in paths {
+            if self.prefetch.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            let _ = self.load(&path, true);
+        }
     }
 
     fn cache_path(&self, path: &Path) -> Option<PathBuf> {
@@ -61,6 +98,10 @@ impl Thumbs {
 
     /// Returns the thumbnail bytes and their media type.
     pub fn get(&self, path: &Path) -> Option<(Vec<u8>, &'static str)> {
+        self.load(path, false)
+    }
+
+    fn load(&self, path: &Path, background: bool) -> Option<(Vec<u8>, &'static str)> {
         if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
             return fs::read(path).ok().map(|b| (b, "image/svg+xml"));
         }
@@ -76,12 +117,11 @@ impl Thumbs {
         if let Some(hit) = cached(&base) {
             return Some(hit);
         }
-        let _permit = self.permit();
+        let _permit = self.permit(background);
         if let Some(hit) = cached(&base) {
             return Some(hit);
         }
-        let img = render(path)?;
-        let (bytes, ext, mime) = encode(img)?;
+        let (bytes, ext, mime) = fast(path).or_else(|| render(path).and_then(encode))?;
         let _ = fs::create_dir_all(&self.dir);
         let target = base.with_extension(ext);
         let tmp = base.with_extension(format!("{ext}.tmp"));
@@ -121,16 +161,23 @@ impl Thumbs {
     }
 }
 
+/// The platform's thumbnail engine, which avoids decoding the full image.
+fn fast(path: &Path) -> Option<(Vec<u8>, &'static str, &'static str)> {
+    #[cfg(target_os = "macos")]
+    return crate::imageio::thumbnail(path, SIZE);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        None
+    }
+}
+
 fn render(path: &Path) -> Option<DynamicImage> {
     #[cfg(windows)]
     if let Some(p) = crate::wic::thumbnail(path, SIZE) {
         return image::RgbaImage::from_raw(p.width, p.height, p.rgba).map(DynamicImage::ImageRgba8);
     }
     if let Some(img) = render_with_image(path) {
-        return Some(img);
-    }
-    #[cfg(target_os = "macos")]
-    if let Some(img) = render_with_quicklook(path) {
         return Some(img);
     }
     None
@@ -155,42 +202,6 @@ fn render_with_image(path: &Path) -> Option<DynamicImage> {
     })
 }
 
-/// Quick Look covers formats the image crate cannot decode, such as HEIC and AVIF.
-#[cfg(target_os = "macos")]
-fn render_with_quicklook(path: &Path) -> Option<DynamicImage> {
-    let out = std::env::temp_dir().join(format!(
-        "image-plus-ql-{}-{:x}",
-        std::process::id(),
-        {
-            let mut h = DefaultHasher::new();
-            path.hash(&mut h);
-            std::thread::current().id().hash(&mut h);
-            h.finish()
-        }
-    ));
-    let _ = fs::create_dir_all(&out);
-    let status = std::process::Command::new("/usr/bin/qlmanage")
-        .args(["-t", "-s", &SIZE.to_string(), "-o"])
-        .arg(&out)
-        .arg(path)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .ok()?;
-    let produced = fs::read_dir(&out)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .find(|p| p.extension().is_some_and(|e| e == "png"));
-    let img = if status.success() {
-        produced.and_then(|p| image::open(p).ok())
-    } else {
-        None
-    };
-    let _ = fs::remove_dir_all(&out);
-    img
-}
-
 fn encode(img: DynamicImage) -> Option<(Vec<u8>, &'static str, &'static str)> {
     let mut out = Vec::new();
     let has_alpha = img.color().has_alpha() && img.to_rgba8().pixels().any(|p| p.0[3] < 255);
@@ -212,6 +223,48 @@ fn encode(img: DynamicImage) -> Option<(Vec<u8>, &'static str, &'static str)> {
 #[cfg(test)]
 mod tests {
     use super::Thumbs;
+
+    /// Timing helper: `THUMB_BENCH=/folder cargo test --release bench -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench() {
+        let dir = std::env::var("THUMB_BENCH").expect("THUMB_BENCH");
+        let mut files: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        files.sort();
+        let start = std::time::Instant::now();
+        let engine = std::env::var("THUMB_ENGINE").unwrap_or_default();
+        for f in &files {
+            if engine == "image" {
+                assert!(super::render(f).and_then(super::encode).is_some());
+            } else {
+                assert!(super::fast(f).or_else(|| super::render(f).and_then(super::encode)).is_some());
+            }
+        }
+        let ms = start.elapsed().as_millis();
+        println!("{} files, {} ms total, {} ms each", files.len(), ms, ms / files.len().max(1) as u128);
+    }
+
+    #[test]
+    fn prefetch_fills_the_cache_and_newer_calls_supersede_older_ones() {
+        let base = std::env::temp_dir().join(format!("image-plus-prefetch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let files: Vec<_> = (0..5)
+            .map(|i| {
+                let p = base.join(format!("{i}.png"));
+                image::RgbImage::from_pixel(50, 40, image::Rgb([i * 40, 0, 0])).save(&p).unwrap();
+                p
+            })
+            .collect();
+        let thumbs = Thumbs::new(base.join("cache"));
+        thumbs.prefetch(files.clone());
+        assert_eq!(std::fs::read_dir(base.join("cache")).unwrap().count(), 5);
+        // Already cached: a second pass returns immediately with the same bytes.
+        let (a, _) = thumbs.get(&files[0]).unwrap();
+        let (b, _) = thumbs.get(&files[0]).unwrap();
+        assert_eq!(a, b);
+        let _ = std::fs::remove_dir_all(base);
+    }
 
     #[test]
     fn renders_and_caches_scaled_thumbnail() {

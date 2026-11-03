@@ -1,11 +1,14 @@
 mod export;
 mod files;
 mod folders;
+#[cfg(target_os = "macos")]
+mod imageio;
 mod library;
 mod protocol;
 mod settings;
 mod thumbs;
 mod transfer;
+mod watch;
 #[cfg(windows)]
 mod wic;
 
@@ -127,6 +130,19 @@ fn settings_get(settings: tauri::State<Settings>) -> Map<String, Value> {
 #[tauri::command]
 fn settings_set(values: Map<String, Value>, settings: tauri::State<Settings>) -> Map<String, Value> {
     settings.update(values)
+}
+
+#[tauri::command]
+fn watch_folders(folders: Vec<String>, watch: tauri::State<watch::FolderWatch>) {
+    watch.set(folders);
+}
+
+#[tauri::command]
+fn thumbs_prefetch(app: AppHandle, paths: Vec<String>) {
+    std::thread::spawn(move || {
+        let paths = paths.into_iter().map(PathBuf::from).collect();
+        app.state::<Thumbs>().prefetch(paths);
+    });
 }
 
 #[tauri::command]
@@ -303,6 +319,7 @@ pub fn run() {
             app.manage(Settings::load(dir));
             let thumbs = Thumbs::new(app.path().app_cache_dir()?.join("thumbnails"));
             app.manage(thumbs);
+            app.manage(watch::FolderWatch::new(app.handle().clone()));
             let handle = app.handle().clone();
             std::thread::spawn(move || handle.state::<Thumbs>().trim());
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -326,6 +343,8 @@ pub fn run() {
             settings_get,
             settings_set,
             thumbs_clear,
+            thumbs_prefetch,
+            watch_folders,
             transfer_plan,
             transfer_run,
             transfer_cancel,
