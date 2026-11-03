@@ -130,6 +130,11 @@ The mouse wheel pans when the image is larger than the window, and otherwise mov
 
 The app never connects to the network and does not collect or send any information. Favorites, recent folders, and settings are stored only in the app's settings folder on this computer, and thumbnails only in the app's cache folder.
 
+## Links
+
+- GitHub repository: https://github.com/chojema/ChojemaImagePlus
+- Chojema App Park: https://chojema.github.io/AppPark/
+
 ## License
 
 [MIT](LICENSE) © 2026 Chulwoo Park

@@ -17,6 +17,7 @@
           </section>
         </div>
         <div class="side-foot">
+          <button id="about-button" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.5" /></svg></button>
           <button id="settings-button" type="button">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></svg>
             <span id="settings-label"></span>
@@ -212,6 +213,24 @@
         <div class="dialog-actions">
           <button id="ex-cancel" type="button"></button>
           <button id="ex-start" class="primary" type="button"></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="about" hidden>
+      <div class="dialog about-dialog" role="dialog" aria-modal="true" aria-labelledby="about-name">
+        <img id="about-icon" alt="" />
+        <h2 id="about-name">Chojema Image+</h2>
+        <p id="about-version"></p>
+        <p id="about-description"></p>
+        <p class="about-copyright">© 2026 Chulwoo Park<br /><span id="about-license"></span></p>
+        <div class="about-links">
+          <button type="button" data-link="https://github.com/chojema/ChojemaImagePlus"><svg viewBox="0 0 24 24"><path d="M9 19c-4 1.5-4-2-6-2.5M15 21v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12 12 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span data-t="aboutGithub"></span></button>
+          <button type="button" data-link="https://chojema.github.io/AppPark/"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg><span data-t="aboutAppPark"></span></button>
+          <button type="button" data-link="https://github.com/chojema/ChojemaImagePlus/blob/main/THIRD-PARTY-NOTICES.txt"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h6" /></svg><span data-t="aboutNotices"></span></button>
+        </div>
+        <div class="dialog-actions">
+          <button id="about-close" class="primary" type="button"></button>
         </div>
       </div>
     </div>

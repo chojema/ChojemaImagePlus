@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.0
+
+- About window: version, copyright, license, and links to the GitHub repository, Chojema App Park, and open-source licenses (macOS app menu or the ⓘ button in the sidebar)
+
 ## 0.11.0
 
 - Interface language: choose follow system / 한국어 / English in Settings (Ctrl/⌘ + ,); applies immediately and keeps the open folders

@@ -208,6 +208,38 @@ fn reveal(path: String) {
     }
 }
 
+/// Pages the About window may open in the default browser.
+const LINKS: &[&str] = &[
+    "https://github.com/chojema/ChojemaImagePlus",
+    "https://chojema.github.io/AppPark/",
+    "https://github.com/chojema/ChojemaImagePlus/blob/main/THIRD-PARTY-NOTICES.txt",
+];
+
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    if !LINKS.contains(&url.as_str()) {
+        return Err("not_allowed".into());
+    }
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("/usr/bin/open").arg(&url).spawn();
+    #[cfg(windows)]
+    let result = std::process::Command::new("explorer.exe").arg(&url).spawn();
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let result = std::process::Command::new("xdg-open").arg(&url).spawn();
+    result.map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// The app menu's About item, relabelled when the interface language changes.
+#[derive(Default)]
+struct AboutItem(Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>);
+
+#[tauri::command]
+fn set_about_label(label: String, item: tauri::State<AboutItem>) {
+    if let Some(about) = item.0.lock().unwrap().as_ref() {
+        let _ = about.set_text(label);
+    }
+}
+
 /// Opens the system privacy settings where file access for the app is granted.
 #[tauri::command]
 fn open_privacy_settings() {
@@ -301,6 +333,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(LaunchState::default())
         .manage(TransferCancel::default())
+        .manage(AboutItem::default())
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "about" {
+                let _ = app.emit("show-about", ());
+            }
+        })
         .register_asynchronous_uri_scheme_protocol("img", |_ctx, request, responder| {
             tauri::async_runtime::spawn_blocking(move || {
                 responder.respond(protocol::handle(&request));
@@ -320,6 +358,20 @@ pub fn run() {
             let thumbs = Thumbs::new(app.path().app_cache_dir()?.join("thumbnails"));
             app.manage(thumbs);
             app.manage(watch::FolderWatch::new(app.handle().clone()));
+            // macOS: the app menu's About opens the app's own window, which has the links.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItem, MenuItemKind};
+                let handle = app.handle();
+                let menu = Menu::default(handle)?;
+                if let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() {
+                    app_menu.remove_at(0)?;
+                    let about = MenuItem::with_id(handle, "about", "About Chojema Image+", true, None::<&str>)?;
+                    app_menu.prepend(&about)?;
+                    *app.state::<AboutItem>().0.lock().unwrap() = Some(about);
+                }
+                app.set_menu(menu)?;
+            }
             let handle = app.handle().clone();
             std::thread::spawn(move || handle.state::<Thumbs>().trim());
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -354,6 +406,8 @@ pub fn run() {
             trash_files,
             reveal,
             slideshow_list,
+            open_link,
+            set_about_label,
             export_plan,
             export_run
         ])

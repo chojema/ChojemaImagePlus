@@ -130,6 +130,11 @@ Windows와 macOS용 가볍고 빠른 이미지 뷰어입니다.
 
 네트워크에 접속하지 않으며 어떤 정보도 수집하거나 전송하지 않습니다. 즐겨찾기, 최근 폴더 목록, 설정은 이 컴퓨터의 앱 설정 폴더에, 썸네일은 앱 캐시 폴더에만 저장됩니다.
 
+## 링크
+
+- GitHub 저장소: https://github.com/chojema/ChojemaImagePlus
+- Chojema App Park: https://chojema.github.io/AppPark/
+
 ## 라이선스
 
 [MIT](LICENSE) © 2026 Chulwoo Park

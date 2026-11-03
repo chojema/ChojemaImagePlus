@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { $, Entry, parentOf, samePath, setWindowTitle, showToast } from "./common";
+import { AboutDialog } from "./about";
 import { Compare } from "./compare";
 import { Exporter } from "./exporter";
 import { Gallery } from "./gallery";
@@ -122,6 +123,7 @@ async function trashFromViewer(path: string): Promise<void> {
 }
 const transfer = new Transfer(() => panes.forEach((p) => p.folder && p.command("refresh")));
 const compare = new Compare({ back: () => backFromCompare() });
+const aboutDialog = new AboutDialog();
 const settingsDialog = new SettingsDialog((choice) => applyLanguage(choice));
 const RESTORE_KEY = "chojema-image-plus.restore";
 
@@ -321,7 +323,7 @@ function toggleSidebar(): void {
 }
 
 window.addEventListener("keydown", (e) => {
-  if (modalOpen() || menuOpen() || slideshowDialog.isOpen || exporter.isOpen) return;
+  if (modalOpen() || menuOpen() || slideshowDialog.isOpen || exporter.isOpen || aboutDialog.isOpen) return;
   if (mode === "slideshow") {
     slideshow.handleKey(e);
     return;
@@ -417,6 +419,9 @@ splitter.addEventListener("pointerdown", (e) => {
 $("settings-label").textContent = t.settings;
 $("settings-button").title = `${t.settings} (Ctrl/⌘ + ,)`;
 $("settings-button").addEventListener("click", () => settingsDialog.open());
+$("about-button").title = t.about;
+$("about-button").setAttribute("aria-label", t.about);
+$("about-button").addEventListener("click", () => aboutDialog.open());
 $("tree-title").textContent = t.locations;
 
 library.onChange = () => updateFavorite();
