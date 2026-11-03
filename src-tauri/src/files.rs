@@ -83,6 +83,8 @@ pub struct Entry {
 pub struct Listing {
     pub entries: Vec<Entry>,
     pub index: usize,
+    /// The folder being browsed, when the list comes from a single folder.
+    pub folder: Option<String>,
 }
 
 fn is_hidden(path: &Path) -> bool {
@@ -137,7 +139,14 @@ pub fn open(paths: &[PathBuf]) -> Result<Listing, String> {
                 return Err("unsupported".into());
             }
             sort(&mut entries);
-            Ok(Listing { entries, index: 0 })
+            let parent = |e: &Entry| Path::new(&e.path).parent().map(Path::to_path_buf);
+            let first = parent(&entries[0]);
+            let folder = if entries.iter().all(|e| parent(e) == first) {
+                first.map(|p| p.to_string_lossy().into_owned())
+            } else {
+                None
+            };
+            Ok(Listing { entries, index: 0, folder })
         }
     }
 }
@@ -148,7 +157,8 @@ fn open_one(path: &Path) -> Result<Listing, String> {
         if entries.is_empty() {
             return Err("no_images".into());
         }
-        return Ok(Listing { entries, index: 0 });
+        let folder = Some(path.to_string_lossy().into_owned());
+        return Ok(Listing { entries, index: 0, folder });
     }
     if !path.is_file() {
         return Err("not_found".into());
@@ -168,7 +178,8 @@ fn open_one(path: &Path) -> Result<Listing, String> {
             0
         }
     };
-    Ok(Listing { entries, index })
+    let folder = Some(dir.to_string_lossy().into_owned());
+    Ok(Listing { entries, index, folder })
 }
 
 fn entry_unfiltered(path: &Path) -> Option<Entry> {

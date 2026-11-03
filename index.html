@@ -15,6 +15,7 @@
           <button id="empty-open-file" type="button"></button>
           <button id="empty-open-folder" type="button"></button>
         </div>
+        <div id="empty-lists" class="folder-lists"></div>
       </section>
       <p id="message" hidden></p>
     </main>
@@ -36,9 +37,12 @@
         <button data-action="rotate-right" type="button"><svg viewBox="0 0 24 24"><path d="M20 4v6h-6" /><path d="M18.5 15a7 7 0 1 1-1.2-7.4L20 10" /></svg></button>
         <span class="sep"></span>
         <button data-action="fullscreen" type="button"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /><rect x="9" y="9" width="6" height="6" /></svg></button>
+        <button id="favorite-button" data-action="favorite" type="button"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z" /></svg></button>
+        <button id="folders-button" data-action="folders" type="button"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z" /></svg></button>
         <button data-action="open" type="button"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></button>
       </div>
     </footer>
+    <aside id="panel" class="folder-lists" hidden></aside>
     <div id="toast" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

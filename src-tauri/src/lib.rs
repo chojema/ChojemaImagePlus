@@ -1,10 +1,12 @@
 mod files;
+mod library;
 mod protocol;
 #[cfg(windows)]
 mod wic;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use library::{Library, Snapshot};
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Default)]
@@ -52,9 +54,48 @@ fn take_launch_paths(state: tauri::State<LaunchState>) -> Vec<String> {
 }
 
 #[tauri::command]
-fn open_paths(paths: Vec<String>) -> Result<files::Listing, String> {
+async fn open_paths(
+    paths: Vec<String>,
+    library: tauri::State<'_, Library>,
+) -> Result<files::Listing, String> {
     let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-    files::open(&paths)
+    let listing = tauri::async_runtime::spawn_blocking(move || files::open(&paths))
+        .await
+        .map_err(|_| "failed".to_string())??;
+    if let Some(folder) = &listing.folder {
+        library.touch_recent(folder);
+    }
+    Ok(listing)
+}
+
+#[tauri::command]
+fn library_get(library: tauri::State<Library>) -> Snapshot {
+    library.snapshot()
+}
+
+#[tauri::command]
+fn favorite_toggle(path: String, library: tauri::State<Library>) -> Snapshot {
+    library.toggle_favorite(&path)
+}
+
+#[tauri::command]
+fn favorite_remove(path: String, library: tauri::State<Library>) -> Snapshot {
+    library.remove_favorite(&path)
+}
+
+#[tauri::command]
+fn favorite_rename(path: String, name: String, library: tauri::State<Library>) -> Snapshot {
+    library.rename_favorite(&path, &name)
+}
+
+#[tauri::command]
+fn favorite_move(path: String, to: usize, library: tauri::State<Library>) -> Snapshot {
+    library.move_favorite(&path, to)
+}
+
+#[tauri::command]
+fn recent_clear(library: tauri::State<Library>) -> Snapshot {
+    library.clear_recent()
 }
 
 #[tauri::command]
@@ -76,6 +117,8 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            let dir = app.path().app_config_dir()?;
+            app.manage(Library::load(dir));
             let cwd = std::env::current_dir().unwrap_or_default();
             let args: Vec<String> = std::env::args().collect();
             deliver(app.handle(), paths_from_args(&args, &cwd));
@@ -84,7 +127,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             take_launch_paths,
             open_paths,
-            image_extensions
+            image_extensions,
+            library_get,
+            favorite_toggle,
+            favorite_remove,
+            favorite_rename,
+            favorite_move,
+            recent_clear
         ])
         .build(tauri::generate_context!())
         .expect("failed to build application");

@@ -12,6 +12,7 @@ A lightweight, fast image viewer for Windows and macOS.
 - Full screen
 - Drag and drop, including several files at once
 - Image file associations (open with a double-click)
+- Favorite folders (add, remove, rename, reorder) and a recent folders list
 
 ## Supported formats
 
@@ -48,12 +49,15 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Rotate right / left | R / L |
 | Full screen / exit | F, F11, Enter / Esc |
 | Open file / open folder | Ctrl (⌘) + O / Ctrl (⌘) + Shift + O |
+| Add or remove current folder from favorites | Ctrl (⌘) + D |
+| Favorites and recent folders | Ctrl (⌘) + B |
+| Open favorite 1–9 | Ctrl (⌘) + 1–9 |
 
 The mouse wheel pans when the image is larger than the window, and otherwise moves to the previous or next image.
 
 ## Privacy
 
-The app never connects to the network and does not collect or send any information.
+The app never connects to the network and does not collect or send any information. Favorites and recent folders are stored only in the app's settings folder on this computer.
 
 ## License
 

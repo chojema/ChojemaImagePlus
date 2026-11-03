@@ -4,6 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { errorText, t } from "./i18n";
+import { Library } from "./library";
 import { View } from "./view";
 
 interface Entry {
@@ -16,6 +17,7 @@ interface Entry {
 interface Listing {
   entries: Entry[];
   index: number;
+  folder: string | null;
 }
 
 const APP_NAME = "Chojema Image+";
@@ -32,11 +34,18 @@ const infoName = $<HTMLElement>("info-name");
 const infoDetail = $<HTMLElement>("info-detail");
 const zoomLabel = $<HTMLButtonElement>("zoom-label");
 const toast = $<HTMLElement>("toast");
+const favoriteButton = $<HTMLButtonElement>("favorite-button");
 
 const appWindow = getCurrentWindow();
 const view = new View(stage, img);
+const library = new Library($("panel"), $("empty-lists"), {
+  open: (path) => void openPaths([path]),
+  toast: (text) => showToast(text),
+});
+library.onChange = () => updateFavoriteButton();
 
 let entries: Entry[] = [];
+let folder: string | null = null;
 let index = -1;
 let loadToken = 0;
 let extensions: string[] = [];
@@ -153,7 +162,9 @@ async function openPaths(paths: string[]): Promise<void> {
   try {
     const listing = await invoke<Listing>("open_paths", { paths });
     entries = listing.entries;
+    folder = listing.folder;
     preloaded.clear();
+    void library.load();
     setEmpty(false);
     show(listing.index);
   } catch (err) {
@@ -192,6 +203,20 @@ function toggleZoom(cx?: number, cy?: number): void {
   updateInfo();
 }
 
+function updateFavoriteButton(): void {
+  const on = library.isFavorite(folder);
+  favoriteButton.classList.toggle("on", on);
+  favoriteButton.disabled = !folder;
+}
+
+function toggleFavorite(): void {
+  if (!folder) {
+    if (entries.length) showToast(t.noFolder);
+    return;
+  }
+  void library.toggle(folder);
+}
+
 const actions: Record<string, () => void> = {
   prev: () => go(-1),
   next: () => go(1),
@@ -207,6 +232,8 @@ const actions: Record<string, () => void> = {
   fullscreen: () => void toggleFullscreen(),
   open: () => void chooseFile(),
   "open-folder": () => void chooseFolder(),
+  favorite: () => toggleFavorite(),
+  folders: () => library.toggleOpen(),
 };
 
 const tooltips: Record<string, string> = {
@@ -220,6 +247,8 @@ const tooltips: Record<string, string> = {
   "rotate-right": t.rotateRight,
   fullscreen: t.fullscreen,
   open: t.open,
+  favorite: t.favoriteToggle,
+  folders: t.folders,
 };
 
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-action]")) {
@@ -235,46 +264,59 @@ $("empty-open-folder").textContent = t.openFolder;
 $("empty-open-file").addEventListener("click", () => void chooseFile());
 $("empty-open-folder").addEventListener("click", () => void chooseFolder());
 
+// Physical key codes keep shortcuts working when a non-Latin input method is active.
+const keymap: Record<string, string> = {
+  ArrowRight: "next",
+  ArrowDown: "next",
+  PageDown: "next",
+  Space: "next",
+  ArrowLeft: "prev",
+  ArrowUp: "prev",
+  PageUp: "prev",
+  Backspace: "prev",
+  Home: "first",
+  End: "last",
+  Equal: "zoom-in",
+  NumpadAdd: "zoom-in",
+  Minus: "zoom-out",
+  NumpadSubtract: "zoom-out",
+  Digit0: "fit",
+  Numpad0: "fit",
+  Digit1: "actual",
+  Numpad1: "actual",
+  KeyR: "rotate-right",
+  KeyL: "rotate-left",
+  KeyF: "fullscreen",
+  F11: "fullscreen",
+  Enter: "fullscreen",
+  NumpadEnter: "fullscreen",
+};
+
 window.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement) return;
   const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === "o") {
-    e.preventDefault();
-    return e.shiftKey ? actions["open-folder"]() : actions.open();
-  }
-  if (mod || e.altKey) return;
-
-  const keymap: Record<string, string> = {
-    ArrowRight: "next",
-    ArrowDown: "next",
-    PageDown: "next",
-    " ": "next",
-    ArrowLeft: "prev",
-    ArrowUp: "prev",
-    PageUp: "prev",
-    Backspace: "prev",
-    Home: "first",
-    End: "last",
-    "+": "zoom-in",
-    "=": "zoom-in",
-    "-": "zoom-out",
-    _: "zoom-out",
-    "0": "fit",
-    "1": "actual",
-    r: "rotate-right",
-    R: e.shiftKey ? "rotate-left" : "rotate-right",
-    l: "rotate-left",
-    L: "rotate-left",
-    f: "fullscreen",
-    F: "fullscreen",
-    F11: "fullscreen",
-    Enter: "fullscreen",
-  };
-
-  if (e.key === "Escape") {
-    if (document.body.classList.contains("fullscreen")) void toggleFullscreen(false);
+  if (mod && !e.altKey) {
+    const digit = /^Digit([1-9])$/.exec(e.code);
+    const command =
+      e.code === "KeyO" ? (e.shiftKey ? actions["open-folder"] : actions.open)
+      : e.code === "KeyD" ? toggleFavorite
+      : e.code === "KeyB" ? () => library.toggleOpen()
+      : digit ? () => library.openFavorite(Number(digit[1]))
+      : null;
+    if (command) {
+      e.preventDefault();
+      command();
+    }
     return;
   }
-  const action = keymap[e.key];
+  if (e.key === "Escape") {
+    if (library.isOpen) library.close();
+    else if (document.body.classList.contains("fullscreen")) void toggleFullscreen(false);
+    return;
+  }
+  if (e.altKey) return;
+  let action = keymap[e.code];
+  if (e.code === "KeyR" && e.shiftKey) action = "rotate-left";
   if (action) {
     e.preventDefault();
     actions[action]();
@@ -373,6 +415,7 @@ async function init(): Promise<void> {
   setEmpty(true);
   updateInfo();
   extensions = await invoke<string[]>("image_extensions");
+  await library.load();
   const launch = await invoke<string[]>("take_launch_paths");
   if (launch.length) await openPaths(launch);
 }

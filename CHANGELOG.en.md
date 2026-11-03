@@ -1,9 +1,13 @@
 # Changelog
 
-## 0.1.1
+## 0.2.0
 
+- Favorite folders: add or remove the current folder (Ctrl/⌘ + D), rename, reorder, open 1–9 directly (Ctrl/⌘ + 1–9)
+- Recent folders list (Ctrl/⌘ + B), also shown on the empty screen
 - HEIC and HEIF images on Windows (using the installed HEIF extensions)
 - TIFF on Windows now uses the system codec and honors photo orientation
+- Shortcuts now work while a non-Latin input method is active
+- The window no longer freezes while a large folder is opening
 
 ## 0.1.0
 
