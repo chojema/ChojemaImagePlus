@@ -19,7 +19,9 @@ Windows와 macOS용 가볍고 빠른 이미지 뷰어입니다.
 |---|:---:|:---:|
 | JPEG, PNG, GIF, WebP, BMP, ICO, AVIF, SVG | ✓ | ✓ |
 | TIFF | ✓ | ✓ |
-| HEIC, HEIF | | ✓ |
+| HEIC, HEIF | ✓¹ | ✓ |
+
+¹ Windows에 Microsoft Store의 **HEIF 이미지 확장**과 **HEVC 비디오 확장**이 설치되어 있어야 합니다. Windows 사진 앱에서 HEIC가 열리면 이미 설치된 것입니다.
 
 ## 설치
 

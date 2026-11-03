@@ -1,5 +1,6 @@
 use crate::files::{self, Kind};
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+use image::{ExtendedColorType, ImageEncoder};
 use percent_encoding::percent_decode_str;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,6 +30,10 @@ pub fn handle(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
 }
 
 fn decode(path: &Path) -> Option<Vec<u8>> {
+    #[cfg(windows)]
+    if let Some(p) = crate::wic::decode(path) {
+        return encode_png(&p.rgba, p.width, p.height, ExtendedColorType::Rgba8);
+    }
     let img = image::ImageReader::open(path)
         .ok()?
         .with_guessed_format()
@@ -36,8 +41,18 @@ fn decode(path: &Path) -> Option<Vec<u8>> {
         .decode()
         .ok()?;
     let mut out = Vec::new();
-    let encoder = PngEncoder::new_with_quality(&mut out, CompressionType::Fast, FilterType::NoFilter);
-    img.write_with_encoder(encoder).ok()?;
+    img.write_with_encoder(encoder(&mut out)).ok()?;
+    Some(out)
+}
+
+fn encoder(out: &mut Vec<u8>) -> PngEncoder<&mut Vec<u8>> {
+    PngEncoder::new_with_quality(out, CompressionType::Fast, FilterType::NoFilter)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn encode_png(pixels: &[u8], width: u32, height: u32, color: ExtendedColorType) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    encoder(&mut out).write_image(pixels, width, height, color).ok()?;
     Some(out)
 }
 

@@ -19,7 +19,9 @@ A lightweight, fast image viewer for Windows and macOS.
 |---|:---:|:---:|
 | JPEG, PNG, GIF, WebP, BMP, ICO, AVIF, SVG | ✓ | ✓ |
 | TIFF | ✓ | ✓ |
-| HEIC, HEIF | | ✓ |
+| HEIC, HEIF | ✓¹ | ✓ |
+
+¹ Requires **HEIF Image Extensions** and **HEVC Video Extensions** from the Microsoft Store. If the Windows Photos app opens HEIC files, they are already installed.
 
 ## Install
 

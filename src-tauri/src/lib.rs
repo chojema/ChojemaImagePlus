@@ -1,5 +1,7 @@
 mod files;
 mod protocol;
+#[cfg(windows)]
+mod wic;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

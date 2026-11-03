@@ -18,7 +18,7 @@ const PLATFORM_NATIVE: &[&str] = &[];
 #[cfg(target_os = "macos")]
 const DECODED: &[&str] = &[];
 #[cfg(not(target_os = "macos"))]
-const DECODED: &[&str] = &["tif", "tiff"];
+const DECODED: &[&str] = &["tif", "tiff", "heic", "heif"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {

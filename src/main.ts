@@ -19,6 +19,7 @@ interface Listing {
 }
 
 const APP_NAME = "Chojema Image+";
+const IS_WINDOWS = navigator.userAgent.includes("Windows");
 const ZOOM_STEP = 1.25;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -132,7 +133,7 @@ function show(i: number): void {
   };
   img.onerror = () => {
     if (token !== loadToken) return;
-    showMessage(t.loadFailed);
+    showMessage(IS_WINDOWS && /\.hei[cf]$/i.test(entry.name) ? t.heifHint : t.loadFailed);
     updateInfo();
   };
   img.src = srcOf(entry);

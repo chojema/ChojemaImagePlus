@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- HEIC and HEIF images on Windows (using the installed HEIF extensions)
+- TIFF on Windows now uses the system codec and honors photo orientation
+
 ## 0.1.0
 
 First release

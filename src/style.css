@@ -115,8 +115,11 @@ body.drop-target #stage {
   top: 50%;
   margin: 0;
   transform: translate(-50%, -50%);
+  max-width: min(560px, 90%);
   color: var(--muted);
   font-size: 15px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 #bar {
