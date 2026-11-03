@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { $, Entry, parentOf, samePath, setWindowTitle, showToast } from "./common";
 import { AboutDialog } from "./about";
 import { Compare } from "./compare";
+import { Editor } from "./editor";
 import { Exporter } from "./exporter";
 import { Gallery } from "./gallery";
 import { errorText, Language, t } from "./i18n";
@@ -56,10 +57,22 @@ function makePane(): Gallery {
     dual: () => void toggleDual(),
     dualLayout: () => toggleDualLayout(),
     sortChanged: () => panes.forEach((p) => p.applySort()),
+    prefetch: () => prefetchPanes(),
   });
   pane.applySettings();
   panes.push(pane);
   return pane;
+}
+
+/**
+ * One background thumbnail list for all panes (the active one first): the backend keeps a single
+ * list, so each pane sending only its own would cancel the other's.
+ */
+function prefetchPanes(): void {
+  const order = [active(), ...panes.filter((p) => p !== active())].filter(Boolean);
+  const seen = new Set<string>();
+  const paths = order.flatMap((p) => p.prefetchPaths()).filter((path) => !seen.has(path) && !!seen.add(path));
+  if (paths.length) void invoke("thumbs_prefetch", { paths });
 }
 
 /** Keeps the backend watching exactly the folders shown in the panes. */
@@ -115,13 +128,18 @@ const viewer = new Viewer({
   trash: (path) => void trashFromViewer(path),
   reveal: (path) => void invoke("reveal", { path }),
   export: (path) => void startExport([path], parentOf(path), null),
+  edit: (entry) => void editor.open(entry),
+});
+const editor = new Editor((entry, replaced) => {
+  viewer.showEdited(entry, replaced);
+  panes.forEach((p) => void p.refreshQuiet());
 });
 
 async function trashFromViewer(path: string): Promise<void> {
   const done = await transfer.trash([path]);
   if (done.includes(path) && !viewer.remove(path)) back();
 }
-const transfer = new Transfer(() => panes.forEach((p) => p.folder && p.command("refresh")));
+const transfer = new Transfer(() => panes.forEach((p) => void p.refreshQuiet()));
 const compare = new Compare({ back: () => backFromCompare() });
 const aboutDialog = new AboutDialog();
 const settingsDialog = new SettingsDialog((choice) => applyLanguage(choice));
@@ -149,7 +167,7 @@ function takeRestore(): { folder: string | null; active: number } | null {
 }
 const exporter = new Exporter(
   (failed) => transfer.reportFailures(failed),
-  () => panes.forEach((p) => p.folder && p.command("refresh")),
+  () => panes.forEach((p) => void p.refreshQuiet()),
 );
 
 function startExport(paths: string[], folder: string | null, from: Gallery | null): void {
@@ -184,7 +202,10 @@ function folderName(path: string): string {
 function setMode(next: Mode): void {
   mode = next;
   for (const m of ["browser", "viewer", "compare", "slideshow"]) document.body.classList.toggle(`mode-${m}`, m === next);
-  if (next !== "viewer") viewer.close();
+  if (next !== "viewer") {
+    editor.close();
+    viewer.close();
+  }
   if (next !== "compare") compare.close();
   if (next === "browser") {
     library.close();
@@ -324,6 +345,10 @@ function toggleSidebar(): void {
 
 window.addEventListener("keydown", (e) => {
   if (modalOpen() || menuOpen() || slideshowDialog.isOpen || exporter.isOpen || aboutDialog.isOpen) return;
+  if (editor.isOpen) {
+    editor.handleKey(e);
+    return;
+  }
   if (mode === "slideshow") {
     slideshow.handleKey(e);
     return;

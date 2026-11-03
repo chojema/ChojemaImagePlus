@@ -80,12 +80,65 @@
           <span class="sep"></span>
           <button data-action="rotate-left" type="button"><svg viewBox="0 0 24 24"><path d="M4 4v6h6" /><path d="M5.5 15a7 7 0 1 0 1.2-7.4L4 10" /></svg></button>
           <button data-action="rotate-right" type="button"><svg viewBox="0 0 24 24"><path d="M20 4v6h-6" /><path d="M18.5 15a7 7 0 1 1-1.2-7.4L20 10" /></svg></button>
+          <button data-action="edit" type="button"><svg viewBox="0 0 24 24"><path d="M6 2v16h16" /><path d="M2 6h16v16" /></svg></button>
           <span class="sep"></span>
           <button data-action="fullscreen" type="button"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /><rect x="9" y="9" width="6" height="6" /></svg></button>
           <button id="favorite-button" data-action="favorite" type="button"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z" /></svg></button>
           <button id="folders-button" data-action="folders" type="button"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z" /></svg></button>
         </div>
       </footer>
+      <div id="editor" hidden>
+        <div id="ed-stage"><canvas id="ed-canvas"></canvas></div>
+        <aside class="ed-panel" role="dialog" aria-labelledby="ed-title">
+          <h2 id="ed-title"></h2>
+          <section>
+            <h3 data-t="edTransform"></h3>
+            <div class="ed-buttons">
+              <button data-ed="rotate-left" type="button"><svg viewBox="0 0 24 24"><path d="M4 4v6h6" /><path d="M5.5 15a7 7 0 1 0 1.2-7.4L4 10" /></svg></button>
+              <button data-ed="rotate-right" type="button"><svg viewBox="0 0 24 24"><path d="M20 4v6h-6" /><path d="M18.5 15a7 7 0 1 1-1.2-7.4L20 10" /></svg></button>
+              <button data-ed="flip-h" type="button"><svg viewBox="0 0 24 24"><path d="M12 3v18" /><path d="M9 7L3 17h6zM15 7l6 10h-6z" /></svg></button>
+              <button data-ed="flip-v" type="button"><svg viewBox="0 0 24 24"><path d="M3 12h18" /><path d="M7 9L17 3v6zM7 15l10 6v-6z" /></svg></button>
+            </div>
+          </section>
+          <section>
+            <h3 data-t="edCrop"></h3>
+            <div class="ed-row">
+              <label for="ed-ratio" data-t="edRatio"></label>
+              <select id="ed-ratio"></select>
+              <button id="ed-crop-reset" type="button"></button>
+            </div>
+            <p class="ed-hint" data-t="edCropHint"></p>
+          </section>
+          <section>
+            <h3 data-t="edSize"></h3>
+            <label><input type="radio" name="ed-resize" value="none" /> <span data-t="exSizeOriginal"></span></label>
+            <label><input type="radio" name="ed-resize" value="long" /> <span data-t="exSizeLong"></span> <input id="ed-long" type="number" min="16" max="20000" /> px</label>
+            <label><input type="radio" name="ed-resize" value="percent" /> <span data-t="exSizePercent"></span> <input id="ed-percent" type="number" min="1" max="1000" /> %</label>
+          </section>
+          <section>
+            <h3 data-t="edBorder"></h3>
+            <div class="ed-row">
+              <label for="ed-border" data-t="edBorderWidth"></label>
+              <input id="ed-border" type="number" min="0" max="2000" /> px
+              <label for="ed-border-color" data-t="edBorderColor"></label>
+              <input id="ed-border-color" type="color" />
+            </div>
+          </section>
+          <section>
+            <h3 data-t="edSaveMode"></h3>
+            <label><input type="radio" name="ed-save" value="copy" /> <span data-t="edSaveCopy"></span></label>
+            <label><input id="ed-save-overwrite-input" type="radio" name="ed-save" value="overwrite" /> <span data-t="edSaveOverwrite"></span></label>
+            <p class="ed-hint" id="ed-no-overwrite" data-t="edNoOverwrite" hidden></p>
+          </section>
+          <p id="ed-result"></p>
+          <div class="ed-actions">
+            <button id="ed-reset" type="button"></button>
+            <span class="ed-spacer"></span>
+            <button id="ed-cancel" type="button"></button>
+            <button id="ed-save" class="primary" type="button"></button>
+          </div>
+        </aside>
+      </div>
     </div>
 
     <div id="compare">

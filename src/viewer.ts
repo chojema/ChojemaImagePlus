@@ -30,6 +30,7 @@ const keymap: Record<string, string> = {
   Numpad1: "actual",
   KeyR: "rotate-right",
   KeyL: "rotate-left",
+  KeyE: "edit",
   KeyF: "fullscreen",
   F11: "fullscreen",
   Enter: "fullscreen",
@@ -70,6 +71,7 @@ export class Viewer {
     trash: (path: string) => void;
     reveal: (path: string) => void;
     export: (path: string) => void;
+    edit: (entry: Entry) => void;
   }) {
     const v = this.view;
     const loaded = (fn: () => void) => () => {
@@ -100,6 +102,10 @@ export class Viewer {
       export: () => {
         if (this.current) hooks.export(this.current.path);
       },
+      edit: () => {
+        if (this.current && v.loaded) hooks.edit(this.current);
+        else showToast(t.edNotReady);
+      },
     };
 
     const tooltips: Record<string, string> = {
@@ -111,6 +117,7 @@ export class Viewer {
       fit: t.fit,
       "rotate-left": t.rotateLeft,
       "rotate-right": t.rotateRight,
+      edit: t.edit,
       fullscreen: t.fullscreen,
       back: t.back,
       favorite: t.favoriteToggle,
@@ -130,6 +137,7 @@ export class Viewer {
       showMenu(e.clientX, e.clientY, [
         { label: t.menuReveal, run: () => hooks.reveal(entry.path) },
         { label: t.menuExport, run: () => hooks.export(entry.path) },
+        { label: t.edTitle, run: () => this.actions.edit() },
         "separator",
         { label: t.menuTrash, run: () => hooks.trash(entry.path), danger: true },
       ]);
@@ -164,6 +172,20 @@ export class Viewer {
     this.folder = folder;
     this.preloaded.clear();
     this.show(index);
+  }
+
+  /** Shows an edited image: a saved copy is added after the current one, a replaced original reloads. */
+  showEdited(entry: Entry, replaced: boolean): void {
+    if (replaced) {
+      const i = this.entries.findIndex((e) => e.path === entry.path);
+      if (i >= 0) this.entries[i] = entry;
+      this.preloaded.clear();
+      this.show(i >= 0 ? i : this.index);
+      return;
+    }
+    const at = this.index + 1;
+    this.entries = [...this.entries.slice(0, at), entry, ...this.entries.slice(at)];
+    this.show(at);
   }
 
   /** Drops a file that no longer exists; returns false when nothing is left to show. */

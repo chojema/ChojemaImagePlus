@@ -186,7 +186,9 @@ impl Inner {
                     }
                 }
                 Task::Prefetch(path) => {
-                    let _ = self.load(&path);
+                    if !self.is_cached(&path) {
+                        let _ = self.load(&path);
+                    }
                     self.state.lock().unwrap().background -= 1;
                     self.ready.notify_one();
                 }
@@ -200,6 +202,14 @@ impl Inner {
         let mut h = DefaultHasher::new();
         (path, meta.len(), modified, SIZE, FORMAT_VERSION).hash(&mut h);
         Some(self.dir.join(format!("{:016x}", h.finish())))
+    }
+
+    /// Whether a thumbnail exists, without reading it (background work only needs to know).
+    fn is_cached(&self, path: &Path) -> bool {
+        is_svg(path)
+            || self
+                .cache_path(path)
+                .is_some_and(|base| ["jpg", "png"].iter().any(|ext| base.with_extension(ext).is_file()))
     }
 
     /// A thumbnail that needs no rendering: an SVG as-is, or one already in the cache.

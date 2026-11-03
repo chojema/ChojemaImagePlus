@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0
+
+- Image editing (Edit button in the viewer, E key, right-click): 90° rotation, horizontal and vertical flips, crop (free, original, 1:1, 4:3, 3:2, 16:9 and portrait ratios), resize (long side or percent), and a border with chosen width and color
+- Save the edit as a copy (name_edit) or replace the original (the original goes to the trash); the saved size is shown beforehand and photo metadata is kept
+- Copying, moving or deleting photos with two panes side by side no longer jumps the list to the top; scroll position and selection are kept
+- Fixed empty or slow thumbnails with two panes open: unchanged cells are not redrawn when a folder changes, and both panes' thumbnails are prepared together
+- Expanding cloud folders such as Dropbox in the folder tree no longer takes seconds; the arrow shows while it loads
+
 ## 0.12.1
 
 - Fixed the thumbnail list freezing the whole app (empty boxes) after scrolling quickly to the end: visible cells are made first, and requests wait until scrolling stops

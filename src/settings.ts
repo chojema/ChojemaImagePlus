@@ -36,6 +36,13 @@ export interface Settings {
   exSubName: string;
   exCustom: string;
   exSuffix: string;
+  edRatio: string;
+  edResize: "none" | "long" | "percent";
+  edLong: number;
+  edPercent: number;
+  edBorder: number;
+  edBorderColor: string;
+  edSave: "copy" | "overwrite";
 }
 
 const defaults: Settings = {
@@ -70,6 +77,13 @@ const defaults: Settings = {
   exSubName: "Export",
   exCustom: "",
   exSuffix: "",
+  edRatio: "free",
+  edResize: "none",
+  edLong: 1920,
+  edPercent: 50,
+  edBorder: 0,
+  edBorderColor: "#ffffff",
+  edSave: "copy",
 };
 
 export const settings: Settings = { ...defaults };

@@ -27,6 +27,7 @@ A lightweight, fast image viewer for Windows and macOS.
 - **Move to Trash**: send selected images to the Trash (Recycle Bin on Windows) with the trash button, the Delete key (⌘ + Backspace on macOS), or the right-click menu. Pair files can go along; in the image view the next image is shown afterwards.
 - **Right-click menu**: view, compare side by side, move or copy to another folder, show in Finder (File Explorer), move to Trash
 - **Slideshow** (S or the play button): choose the folder and whether to include subfolders, the order (list sort order / random), images smaller than the window (original size / enlarge) and larger (shrink / original size), the interval, what to show (current date and time, file name, position), looping, and full screen. Settings are remembered.
+- **Image editing** (Edit button in the image view, E, or right-click): 90° rotation, horizontal and vertical flips, crop (free, original, 1:1, 4:3, 3:2, 16:9 and portrait ratios), resize (long side / percent), and a border with chosen width and color. Save as a copy (name_edit) or replace the original (the original goes to the Trash).
 - **Export to another format** (Ctrl/⌘ + E or right-click): JPEG, PNG, WebP, AVIF, HEIC (macOS), TIFF, BMP
   - Quality, size (original / long side / scale), photo information (keep / remove location only / remove all), background for transparent areas
   - Destination (subfolder of the source folder / same folder / other pane / another folder) and text added to file names
@@ -86,6 +87,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 |---|---|
 | Back to list | Esc |
 | Move the current image to the Trash | Delete, ⌘ + Backspace (macOS) |
+| Edit the image (while editing: R / L rotate, Enter save, Esc cancel) | E |
 | Next / previous image | → ↓ PageDown Space / ← ↑ PageUp Backspace |
 | First / last image | Home / End |
 | Zoom in / out | + / - , Ctrl (⌘) + wheel, trackpad pinch |

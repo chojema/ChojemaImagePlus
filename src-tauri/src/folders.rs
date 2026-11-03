@@ -61,8 +61,14 @@ fn visible_dirs(dir: &Path) -> impl Iterator<Item = PathBuf> {
         .flatten()
         .filter_map(|e| e.ok())
         .filter_map(|e| {
+            // The listing already says what each entry is, so plain files are skipped without
+            // opening them: a cloud folder with thousands of photos stays quick.
+            let kind = e.file_type().ok()?;
+            if !kind.is_dir() && !kind.is_symlink() {
+                return None;
+            }
             let path = e.path();
-            let meta = fs::metadata(&path).ok()?;
+            let meta = if kind.is_symlink() { fs::metadata(&path).ok()? } else { e.metadata().ok()? };
             (meta.is_dir() && !hidden(&path, &meta)).then_some(path)
         })
 }
@@ -126,3 +132,4 @@ pub fn roots(places: Vec<(PathBuf, String)>) -> Roots {
 
     Roots { places, drives }
 }
+

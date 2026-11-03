@@ -1,3 +1,4 @@
+mod edit;
 mod export;
 mod files;
 mod folders;
@@ -275,6 +276,18 @@ async fn export_run(
 }
 
 #[tauri::command]
+async fn edit_save(src: String, edit: edit::Edit, mode: edit::SaveMode) -> Result<files::Entry, String> {
+    tauri::async_runtime::spawn_blocking(move || edit::save(Path::new(&src), &edit, mode))
+        .await
+        .map_err(|_| "failed".to_string())?
+}
+
+#[tauri::command]
+fn edit_can_overwrite(path: String) -> bool {
+    edit::can_overwrite(Path::new(&path))
+}
+
+#[tauri::command]
 fn transfer_cancel(cancel: tauri::State<TransferCancel>) {
     cancel.0.store(true, Ordering::Relaxed);
 }
@@ -407,7 +420,9 @@ pub fn run() {
             open_link,
             set_about_label,
             export_plan,
-            export_run
+            export_run,
+            edit_save,
+            edit_can_overwrite
         ])
         .build(tauri::generate_context!())
         .expect("failed to build application");

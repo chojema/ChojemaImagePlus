@@ -24,6 +24,8 @@ interface Hooks {
   dual: () => void;
   dualLayout: () => void;
   sortChanged: () => void;
+  /** Asks the backend to render the thumbnails of every open pane in the background. */
+  prefetch: () => void;
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -239,7 +241,7 @@ export class Gallery {
         break;
       }
       case "refresh":
-        if (this.folder) void this.load(this.folder, this.current?.path);
+        void this.refreshQuiet(true);
         break;
       case "open":
         this.hooks.chooseFolder();
@@ -294,7 +296,7 @@ export class Gallery {
       this.grid.scrollTop = 0;
       this.render();
       if (i >= 0) this.scrollTo(i);
-      this.prefetch();
+      this.hooks.prefetch();
       return true;
     } catch (err) {
       this.hooks.toast(errorText(err));
@@ -302,8 +304,12 @@ export class Gallery {
     }
   }
 
-  /** Re-reads the folder after outside changes, keeping selection, focus and scroll position. */
-  async refreshQuiet(): Promise<void> {
+  /**
+   * Re-reads the folder after a change (a move, a copy, another program), keeping selection, focus
+   * and scroll position. Cells whose file did not change keep their thumbnail; `force` (F5) makes
+   * every cell ask for its thumbnail again.
+   */
+  async refreshQuiet(force = false): Promise<void> {
     if (!this.folder) return;
     const dir = this.folder;
     const token = ++this.loadToken;
@@ -314,23 +320,38 @@ export class Gallery {
       return;
     }
     if (token !== this.loadToken || dir !== this.folder) return;
+    const next = this.sorted(entries);
+    const same = (a: Entry | undefined, b: Entry | undefined) =>
+      !!a && !!b && a.path === b.path && a.modified === b.modified && a.size === b.size;
+    if (!force && next.length === this.entries.length && next.every((e, i) => same(e, this.entries[i]))) return;
+
     const chosen = new Set([...this.selected].map((i) => this.entries[i]?.path));
     const focusPath = this.entries[this.focus]?.path;
     const anchorPath = this.entries[this.anchor]?.path;
     const top = this.grid.scrollTop;
-    this.entries = this.sorted(entries);
-    this.selected = new Set(this.entries.flatMap((e, i) => (chosen.has(e.path) ? [i] : [])));
-    this.focus = focusPath ? this.entries.findIndex((e) => e.path === focusPath) : -1;
-    this.anchor = anchorPath ? this.entries.findIndex((e) => e.path === anchorPath) : -1;
-    this.render();
+    const old = this.entries;
+    this.entries = next;
+    this.selected = new Set(next.flatMap((e, i) => (chosen.has(e.path) ? [i] : [])));
+    this.focus = focusPath ? next.findIndex((e) => e.path === focusPath) : -1;
+    this.anchor = anchorPath ? next.findIndex((e) => e.path === anchorPath) : -1;
+    for (const [i, cell] of this.cells) {
+      if (!force && same(old[i], next[i])) continue;
+      cell.remove();
+      this.cells.delete(i);
+      const img = cell.querySelector("img");
+      if (img) this.unloaded.delete(img);
+    }
+    this.updateEmpty();
+    this.relayout();
     this.grid.scrollTop = top;
-    this.schedule();
-    this.prefetch();
+    this.renderVisible();
+    this.paintSelection();
+    this.hooks.prefetch();
   }
 
-  /** Lets the backend render the rest of the folder's thumbnails while the user looks around. */
-  private prefetch(): void {
-    if (this.entries.length) void invoke("thumbs_prefetch", { paths: this.entries.map((e) => e.path) });
+  /** The paths whose thumbnails the backend may render ahead of time. */
+  prefetchPaths(): string[] {
+    return this.entries.map((e) => e.path);
   }
 
   /** Moves the selection to `path`, typically after returning from the viewer. */
@@ -371,6 +392,15 @@ export class Gallery {
 
   private render(): void {
     this.renderCrumbs();
+    this.updateEmpty();
+    for (const cell of this.cells.values()) cell.remove();
+    this.cells.clear();
+    this.unloaded.clear();
+    this.relayout();
+    this.paintSelection();
+  }
+
+  private updateEmpty(): void {
     const hasFolder = this.folder !== null;
     this.empty.hidden = hasFolder && this.entries.length > 0;
     this.emptyText.textContent = hasFolder ? t.folderEmpty : t.emptyText;
@@ -378,12 +408,6 @@ export class Gallery {
     this.root.classList.toggle("no-folder", !hasFolder);
     if (this.folder) this.root.dataset.drop = this.folder;
     else delete this.root.dataset.drop;
-
-    for (const cell of this.cells.values()) cell.remove();
-    this.cells.clear();
-    this.unloaded.clear();
-    this.relayout();
-    this.paintSelection();
   }
 
   /** Requests thumbnails for cells still on the page; while the list is moving, waits until it stops. */

@@ -20,6 +20,7 @@ const FOLDER_ICON =
 export class FolderTree {
   private roots: HTMLElement[] = [];
   private active: string | null = null;
+  private readonly pending = new Map<HTMLElement, Promise<boolean>>();
 
   constructor(
     private readonly container: HTMLElement,
@@ -82,19 +83,31 @@ export class FolderTree {
 
   private async expand(item: HTMLElement): Promise<void> {
     if (item.classList.contains("open")) return;
+    if (!item.dataset.loaded && !(await this.loadChildren(item))) return;
+    item.classList.add("open");
+  }
+
+  /** Lists a folder's subfolders once; clicks while a slow (network, cloud) folder is still listing share the same request. */
+  private loadChildren(item: HTMLElement): Promise<boolean> {
+    let pending = this.pending.get(item);
+    if (pending) return pending;
     const children = item.querySelector<HTMLElement>(":scope > .children")!;
-    if (!item.dataset.loaded) {
-      const depth = Number(item.dataset.depth) + 1;
-      try {
-        const list = await invoke<Folder[]>("folder_children", { path: item.dataset.path });
+    const depth = Number(item.dataset.depth) + 1;
+    item.classList.add("loading");
+    pending = invoke<Folder[]>("folder_children", { path: item.dataset.path })
+      .then((list) => {
         children.replaceChildren(...list.map((f) => this.node(f, depth)));
         item.dataset.loaded = "1";
         if (!list.length) item.querySelector<HTMLElement>(":scope > .row .twisty")!.hidden = true;
-      } catch {
-        return;
-      }
-    }
-    item.classList.add("open");
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => {
+        item.classList.remove("loading");
+        this.pending.delete(item);
+      });
+    this.pending.set(item, pending);
+    return pending;
   }
 
   private async toggle(item: HTMLElement): Promise<void> {

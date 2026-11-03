@@ -93,7 +93,7 @@ fn is_hidden(path: &Path) -> bool {
         .map_or(true, |n| n.starts_with('.'))
 }
 
-fn entry(path: &Path) -> Option<Entry> {
+pub(crate) fn entry(path: &Path) -> Option<Entry> {
     if is_hidden(path) || kind(path).is_none() {
         return None;
     }

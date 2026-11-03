@@ -41,12 +41,12 @@ impl Format {
         }
     }
 
-    fn keeps_alpha(self) -> bool {
+    pub(crate) fn keeps_alpha(self) -> bool {
         !matches!(self, Format::Jpeg | Format::Bmp)
     }
 
     /// Container little_exif can write EXIF into.
-    fn exif_container(self) -> Option<FileExtension> {
+    pub(crate) fn exif_container(self) -> Option<FileExtension> {
         match self {
             Format::Jpeg => Some(FileExtension::JPEG),
             Format::Png => Some(FileExtension::PNG { as_zTXt_chunk: false }),
@@ -132,7 +132,7 @@ pub fn plan(sources: &[String], dest: &Path, options: &Options) -> Result<Vec<Pl
 }
 
 /// Decodes the image with its orientation applied so the pixels are upright.
-fn load(path: &Path) -> io::Result<DynamicImage> {
+pub(crate) fn load(path: &Path) -> io::Result<DynamicImage> {
     let fail = |e: image::ImageError| io::Error::new(io::ErrorKind::InvalidData, e.to_string());
     let attempt = || -> io::Result<DynamicImage> {
         let mut decoder = ImageReader::open(path)?.with_guessed_format()?.into_decoder().map_err(fail)?;
@@ -186,7 +186,7 @@ fn temp_path(ext: &str) -> PathBuf {
     std::env::temp_dir().join(format!("image-plus-export-{}-{n}.{ext}", std::process::id()))
 }
 
-fn resize(img: DynamicImage, resize: &Resize) -> DynamicImage {
+pub(crate) fn resize(img: DynamicImage, resize: &Resize) -> DynamicImage {
     let (w, h) = (img.width(), img.height());
     let (tw, th) = match *resize {
         Resize::None => return img,
@@ -204,7 +204,7 @@ fn resize(img: DynamicImage, resize: &Resize) -> DynamicImage {
 }
 
 /// Composites transparent pixels onto `bg` for formats without transparency.
-fn flatten(img: DynamicImage, bg: [u8; 3]) -> DynamicImage {
+pub(crate) fn flatten(img: DynamicImage, bg: [u8; 3]) -> DynamicImage {
     if !img.color().has_alpha() {
         return img;
     }
@@ -218,7 +218,7 @@ fn flatten(img: DynamicImage, bg: [u8; 3]) -> DynamicImage {
     DynamicImage::ImageRgb8(out)
 }
 
-fn encode(img: &DynamicImage, format: Format, quality: u8) -> io::Result<Vec<u8>> {
+pub(crate) fn encode(img: &DynamicImage, format: Format, quality: u8) -> io::Result<Vec<u8>> {
     let fail = |e: image::ImageError| io::Error::other(e.to_string());
     let quality = quality.clamp(1, 100);
     let mut out = Vec::new();
@@ -263,7 +263,7 @@ fn encode(img: &DynamicImage, format: Format, quality: u8) -> io::Result<Vec<u8>
 }
 
 /// The source's EXIF, adjusted for the exported pixels: upright, optionally without location.
-fn exif_for(src: &Path, mode: MetaMode) -> Option<Metadata> {
+pub(crate) fn exif_for(src: &Path, mode: MetaMode) -> Option<Metadata> {
     if mode == MetaMode::Strip {
         return None;
     }
@@ -323,7 +323,7 @@ pub fn render(src: &Path, options: &Options) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn free_name(dir: &Path, name: &str) -> PathBuf {
+pub(crate) fn free_name(dir: &Path, name: &str) -> PathBuf {
     let path = Path::new(name);
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
