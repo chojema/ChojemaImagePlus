@@ -1,6 +1,12 @@
 /*
 !/.gitignore
 !/.gitattributes
+
+!/.github/
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/*.yml
 !/LICENSE
 !/README.md
 !/README.en.md

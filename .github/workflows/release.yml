@@ -1,0 +1,153 @@
+# 태그(v*)를 푸시하면 Windows·macOS 설치 파일을 빌드해 GitHub Release 초안에 올린다.
+# 초안을 확인한 뒤 GitHub에서 직접 게시(Publish)한다.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "빌드할 태그 (예: v0.12.0)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  APP: ChojemaImagePlus
+
+jobs:
+  check:
+    name: 버전 확인
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+      - id: v
+        name: 태그와 세 설정 파일의 버전이 같은지 확인
+        run: |
+          VER="${TAG#v}"
+          PKG=$(node -p "require('./package.json').version")
+          CONF=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          CARGO=$(sed -n 's/^version *= *"\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          echo "tag=$VER package.json=$PKG tauri.conf.json=$CONF Cargo.toml=$CARGO"
+          if [ "$VER" != "$PKG" ] || [ "$VER" != "$CONF" ] || [ "$VER" != "$CARGO" ]; then
+            echo "::error::태그 버전과 설정 파일 버전이 다릅니다"
+            exit 1
+          fi
+          grep -qx "## $VER" CHANGELOG.md || { echo "::error::CHANGELOG.md에 ## $VER 항목이 없습니다"; exit 1; }
+          grep -qx "## $VER" CHANGELOG.en.md || { echo "::error::CHANGELOG.en.md에 ## $VER 항목이 없습니다"; exit 1; }
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: 빌드 (${{ matrix.name }})
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            rust_targets: ""
+            args: "--bundles nsis"
+            bundle: src-tauri/target/release/bundle/nsis/*.exe
+            suffix: "-setup.exe"
+          - name: macos-universal
+            os: macos-latest
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: "--target universal-apple-darwin --bundles dmg"
+            bundle: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            suffix: ".dmg"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: 설치 파일 빌드
+        run: npm run tauri build -- ${{ matrix.args }}
+
+      - name: 파일 이름 정리
+        shell: bash
+        run: |
+          mkdir -p out
+          set -- ${{ matrix.bundle }}
+          [ "$#" -eq 1 ] && [ -f "$1" ] || { echo "::error::설치 파일을 찾지 못했거나 여러 개입니다: $*"; exit 1; }
+          cp "$1" "out/${APP}-${{ needs.check.outputs.version }}-${{ matrix.name }}${{ matrix.suffix }}"
+          ls -l out
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: Release 초안
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VER: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: 체크섬과 라이선스 고지
+        run: |
+          cd out
+          sha256sum ${APP}-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          cp ../THIRD-PARTY-NOTICES.txt .
+
+      - name: 릴리스 노트 (한국어 + English)
+        run: |
+          section() { awk -v h="## $VER" '$0==h{f=1;next} /^## /{f=0} f' "$1" | sed -e '/./,$!d'; }
+          {
+            echo "### $VER"; echo; section CHANGELOG.md
+            echo; echo "---"; echo
+            echo "### $VER"; echo; section CHANGELOG.en.md
+          } > notes.md
+          cat notes.md
+
+      - name: Release에 올리기
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "기존 Release에 파일을 교체해 올립니다"
+            gh release upload "$TAG" out/* --clobber
+          else
+            gh release create "$TAG" out/* --draft --verify-tag \
+              --title "Chojema Image+ $VER" --notes-file notes.md
+          fi
