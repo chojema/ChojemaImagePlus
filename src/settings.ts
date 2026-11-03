@@ -14,6 +14,16 @@ export interface Settings {
   dual: boolean;
   dualVertical: boolean;
   dualFolder: string;
+  ssRecursive: boolean;
+  ssOrder: "name" | "random";
+  ssSmall: "original" | "enlarge";
+  ssLarge: "shrink" | "original";
+  ssInterval: number;
+  ssClock: boolean;
+  ssName: boolean;
+  ssIndex: boolean;
+  ssLoop: boolean;
+  ssFullscreen: boolean;
 }
 
 const defaults: Settings = {
@@ -26,6 +36,16 @@ const defaults: Settings = {
   dual: false,
   dualVertical: false,
   dualFolder: "",
+  ssRecursive: false,
+  ssOrder: "name",
+  ssSmall: "original",
+  ssLarge: "shrink",
+  ssInterval: 5,
+  ssClock: true,
+  ssName: true,
+  ssIndex: false,
+  ssLoop: true,
+  ssFullscreen: true,
 };
 
 export const settings: Settings = { ...defaults };

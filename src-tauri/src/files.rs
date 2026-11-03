@@ -128,6 +128,47 @@ pub fn scan(dir: &Path) -> Result<Vec<Entry>, String> {
     Ok(entries)
 }
 
+/// Images in `dir` and, when `recursive`, in all visible subfolders (packages and symbolic
+/// links to folders are skipped), ordered by folder and then by name.
+pub fn scan_tree(dir: &Path, recursive: bool, limit: usize) -> Result<Vec<Entry>, String> {
+    if !recursive {
+        return scan(dir);
+    }
+    if !dir.is_dir() {
+        return Err("not_found".into());
+    }
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(folder) = stack.pop() {
+        let Ok(read) = fs::read_dir(&folder) else { continue };
+        let mut subdirs = Vec::new();
+        let mut here = Vec::new();
+        for item in read.filter_map(|e| e.ok()) {
+            let path = item.path();
+            let Ok(kind) = item.file_type() else { continue };
+            if kind.is_dir() {
+                let hidden = path.file_name().and_then(|n| n.to_str()).map_or(true, |n| n.starts_with('.'));
+                if !hidden && !crate::folders::is_package(&path) {
+                    subdirs.push(path);
+                }
+            } else if let Some(e) = entry(&path) {
+                here.push(e);
+            }
+        }
+        sort(&mut here);
+        out.extend(here);
+        if out.len() >= limit {
+            out.truncate(limit);
+            break;
+        }
+        subdirs.sort_by(|a, b| {
+            natural_cmp(&a.to_string_lossy(), &b.to_string_lossy())
+        });
+        stack.extend(subdirs.into_iter().rev());
+    }
+    Ok(out)
+}
+
 /// One folder or file opens its whole folder; several files open as their own list.
 pub fn open(paths: &[PathBuf]) -> Result<Listing, String> {
     match paths {
@@ -247,6 +288,26 @@ fn take_digits(it: &mut std::iter::Peekable<std::str::Chars>) -> String {
 mod tests {
     use super::natural_cmp;
     use std::cmp::Ordering;
+
+    #[test]
+    fn scan_tree_walks_subfolders_in_order() {
+        let base = std::env::temp_dir().join(format!("image-plus-tree-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for d in ["", "b", "a", "a/deep", ".hidden"] {
+            std::fs::create_dir_all(base.join(d)).unwrap();
+        }
+        for f in ["2.jpg", "10.jpg", "b/x.png", "a/y.png", "a/deep/z.gif", ".hidden/h.jpg", "note.txt"] {
+            std::fs::write(base.join(f), "x").unwrap();
+        }
+        let names = |v: Vec<super::Entry>| v.into_iter().map(|e| e.name).collect::<Vec<_>>();
+        assert_eq!(names(super::scan_tree(&base, false, 100).unwrap()), ["2.jpg", "10.jpg"]);
+        assert_eq!(
+            names(super::scan_tree(&base, true, 100).unwrap()),
+            ["2.jpg", "10.jpg", "y.png", "z.gif", "x.png"]
+        );
+        assert_eq!(super::scan_tree(&base, true, 3).unwrap().len(), 3);
+        let _ = std::fs::remove_dir_all(base);
+    }
 
     #[test]
     fn numbers_compare_by_value() {

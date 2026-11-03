@@ -87,6 +87,14 @@ async fn browse(dir: String, library: tauri::State<'_, Library>) -> Result<Vec<f
 }
 
 #[tauri::command]
+async fn slideshow_list(dir: String, recursive: bool) -> Result<Vec<files::Entry>, String> {
+    const LIMIT: usize = 100_000;
+    tauri::async_runtime::spawn_blocking(move || files::scan_tree(Path::new(&dir), recursive, LIMIT))
+        .await
+        .map_err(|_| "failed".to_string())?
+}
+
+#[tauri::command]
 async fn folder_children(path: String) -> Result<Vec<folders::Folder>, String> {
     tauri::async_runtime::spawn_blocking(move || folders::children(Path::new(&path)))
         .await
@@ -298,7 +306,8 @@ pub fn run() {
             open_privacy_settings,
             trash_plan,
             trash_files,
-            reveal
+            reveal,
+            slideshow_list
         ])
         .build(tauri::generate_context!())
         .expect("failed to build application");

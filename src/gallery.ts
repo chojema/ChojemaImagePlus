@@ -12,6 +12,7 @@ interface Hooks {
   /** `dest` null asks for the destination folder. */
   transfer: (paths: string[], dest: string | null) => void;
   trash: (paths: string[]) => void;
+  slideshow: () => void;
   reveal: (path: string) => void;
   favorite: () => void;
   chooseFolder: () => void;
@@ -88,6 +89,7 @@ export class Gallery {
       "sort-dir": t.sortDir,
       transfer: t.transfer,
       trash: t.trash,
+      slideshow: t.slideshow,
       compare: t.compare,
       favorite: t.favoriteToggle,
       refresh: t.refresh,
@@ -200,6 +202,9 @@ export class Gallery {
       case "compare":
         this.compareSelection();
         break;
+      case "slideshow":
+        this.hooks.slideshow();
+        break;
       case "trash": {
         const paths = this.selectedPaths();
         if (paths.length) this.hooks.trash(paths);
@@ -284,7 +289,7 @@ export class Gallery {
     this.scrollTo(i);
   }
 
-  private sorted(list: Entry[]): Entry[] {
+  sorted(list: Entry[]): Entry[] {
     const dir = settings.sortDesc ? -1 : 1;
     const byName = (a: Entry, b: Entry) => collator.compare(a.name, b.name);
     const compare: Record<SortKey, (a: Entry, b: Entry) => number> = {
@@ -468,6 +473,11 @@ export class Gallery {
     if (e.code === "Backspace") {
       e.preventDefault();
       this.command("up");
+      return true;
+    }
+    if (e.code === "KeyS") {
+      e.preventDefault();
+      this.command("slideshow");
       return true;
     }
     if (e.code === "KeyM") {

@@ -24,6 +24,7 @@ A lightweight, fast image viewer for Windows and macOS.
   - Switch panes with Tab; the folder tree and favorites open in the active pane (blue underline).
 - **Move to Trash**: send selected images to the Trash (Recycle Bin on Windows) with the trash button, the Delete key (⌘ + Backspace on macOS), or the right-click menu. Pair files can go along; in the image view the next image is shown afterwards.
 - **Right-click menu**: view, compare side by side, move or copy to another folder, show in Finder (File Explorer), move to Trash
+- **Slideshow** (S or the play button): choose the folder and whether to include subfolders, the order (list sort order / random), images smaller than the window (original size / enlarge) and larger (shrink / original size), the interval, what to show (current date and time, file name, position), looping, and full screen. Settings are remembered.
 - Favorite folders (add, remove, rename, reorder) and a recent folders list
 - Drag and drop, open several files at once, image file associations (open with a double-click)
 - Settings: screen shown when the app opens (last folder / empty screen), delete stored thumbnails
@@ -66,6 +67,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Dual pane on/off / switch pane | F6 / Tab |
 | Undo the last move or copy | Ctrl (⌘) + Z |
 | Move selected images to the Trash | Delete, ⌘ + Backspace (macOS) |
+| Slideshow | S |
 | Parent folder | Backspace, Alt + ↑ |
 | Refresh | F5 |
 | Hide or show sidebar | Ctrl (⌘) + B |
@@ -97,6 +99,15 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Select next pane | Tab |
 | Rotate / close selected pane | R, L / Delete |
 | Full screen | F |
+
+**Slideshow**
+
+| Action | Keys |
+|---|---|
+| Pause / resume | Space, click |
+| Previous / next image | ← / → |
+| Full screen | F |
+| Stop | Esc |
 
 **Everywhere**
 

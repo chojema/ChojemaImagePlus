@@ -1243,3 +1243,148 @@ body.dual .gallery-bar button {
   border: 0;
   border-top: 1px solid var(--line);
 }
+
+/* Slideshow */
+
+body:not(.mode-slideshow) #slideshow {
+  display: none;
+}
+
+#slideshow {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  overflow: hidden;
+  background: #000;
+  cursor: none;
+}
+
+#slideshow .slide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: none;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+#slideshow .slide.visible {
+  opacity: 1;
+}
+
+.ss-overlay {
+  position: absolute;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 15px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.ss-overlay[hidden] {
+  display: none;
+}
+
+#ss-clock {
+  top: 20px;
+  right: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+#ss-caption {
+  left: 24px;
+  bottom: 20px;
+  max-width: calc(100% - 48px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+#ss-paused {
+  left: 50%;
+  top: 50%;
+  padding: 10px 18px;
+  font-size: 18px;
+  transform: translate(-50%, -50%);
+}
+
+#ss-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#ss-dialog[hidden] {
+  display: none;
+}
+
+.ss-dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.ss-dialog fieldset {
+  margin-bottom: 12px;
+}
+
+.ss-folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+#ss-folder-path {
+  flex: 1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.ss-check,
+.ss-interval {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.ss-dialog input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+#ss-interval {
+  width: 70px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1c1c1e;
+  color: var(--text);
+  font: inherit;
+}
+
+.ss-hint {
+  margin: 4px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dialog button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

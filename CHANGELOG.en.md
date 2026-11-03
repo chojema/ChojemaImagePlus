@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+- Slideshow (S or the play button): choose a folder and whether to include subfolders
+- Order: list sort order or random (reshuffled on every loop)
+- Images smaller than the window at original size or enlarged; larger ones shrunk or at original size
+- Interval, current date and time / file name / position overlays, looping, and full screen (remembered)
+- Space to pause, ←/→ for previous/next, Esc to stop, with cross-fades
+
 ## 0.7.0
 
 - Move to Trash: trash button, Delete key (⌘ + Backspace on macOS), or right-click menu, after confirmation; pair files can go along

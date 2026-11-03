@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { $, Entry, samePath, setWindowTitle, showToast } from "./common";
+import { $, Entry, parentOf, samePath, setWindowTitle, showToast } from "./common";
 import { Compare } from "./compare";
 import { Gallery } from "./gallery";
 import { errorText, t } from "./i18n";
@@ -11,6 +11,7 @@ import { menuOpen } from "./menu";
 import { modalOpen } from "./modal";
 import { Transfer } from "./transfer";
 import { loadSettings, saveSettings, settings, SettingsDialog } from "./settings";
+import { Slideshow, SlideshowDialog } from "./slideshow";
 import { FolderTree } from "./tree";
 import { Viewer } from "./viewer";
 
@@ -22,7 +23,7 @@ interface Listing {
 
 const APP_NAME = "Chojema Image+";
 let extensions: string[] = [];
-type Mode = "browser" | "viewer" | "compare";
+type Mode = "browser" | "viewer" | "compare" | "slideshow";
 let mode: Mode = "browser";
 
 const library = new Library($("side-library"), $("panel"), {
@@ -41,6 +42,7 @@ function makePane(): Gallery {
     compare: (entries) => openCompare(entries),
     transfer: (paths, dest) => void startTransfer(paths, dest, pane),
     trash: (paths) => void transfer.trash(paths),
+    slideshow: () => void startSlideshow(pane.folder),
     reveal: (path) => void invoke("reveal", { path }),
     favorite: () => toggleFavorite(),
     chooseFolder: () => void chooseFolder(),
@@ -110,6 +112,22 @@ async function trashFromViewer(path: string): Promise<void> {
 const transfer = new Transfer(() => panes.forEach((p) => p.folder && p.command("refresh")));
 const compare = new Compare({ back: () => backFromCompare() });
 const settingsDialog = new SettingsDialog();
+const slideshowDialog = new SlideshowDialog();
+let modeBeforeSlideshow: Mode = "browser";
+const slideshow = new Slideshow((last) => {
+  setMode(modeBeforeSlideshow === "viewer" ? "browser" : modeBeforeSlideshow);
+  if (last && samePath(parentOf(last.path), active().folder)) active().reveal(last.path);
+});
+
+
+async function startSlideshow(folder: string | null): Promise<void> {
+  const options = await slideshowDialog.ask(folder ?? active().folder);
+  if (!options) return;
+  modeBeforeSlideshow = mode === "compare" ? "browser" : mode;
+  setMode("slideshow");
+  const ok = await slideshow.start(options, (list) => active().sorted(list));
+  if (!ok) setMode(modeBeforeSlideshow === "viewer" ? "browser" : modeBeforeSlideshow);
+}
 
 const setTitle = setWindowTitle;
 
@@ -119,7 +137,7 @@ function folderName(path: string): string {
 
 function setMode(next: Mode): void {
   mode = next;
-  for (const m of ["browser", "viewer", "compare"]) document.body.classList.toggle(`mode-${m}`, m === next);
+  for (const m of ["browser", "viewer", "compare", "slideshow"]) document.body.classList.toggle(`mode-${m}`, m === next);
   if (next !== "viewer") viewer.close();
   if (next !== "compare") compare.close();
   if (next === "browser") {
@@ -257,7 +275,11 @@ function toggleSidebar(): void {
 }
 
 window.addEventListener("keydown", (e) => {
-  if (modalOpen() || menuOpen()) return;
+  if (modalOpen() || menuOpen() || slideshowDialog.isOpen) return;
+  if (mode === "slideshow") {
+    slideshow.handleKey(e);
+    return;
+  }
   if (settingsDialog.isOpen) {
     if (e.key === "Escape") settingsDialog.close();
     return;
@@ -301,6 +323,11 @@ window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (viewer.isFullscreen) void viewer.toggleFullscreen(false);
       else back();
+      return;
+    }
+    if (e.code === "KeyS" && !mod) {
+      e.preventDefault();
+      void startSlideshow(viewer.folder);
       return;
     }
     viewer.handleKey(e);
