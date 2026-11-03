@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.0
+
+- Subfolders in the thumbnail list: folder icons come before the images, and a click opens the folder (right-click: Open, show in Explorer/Finder)
+- Drag photos onto a subfolder in the list to move or copy them there
+
 ## 0.13.0
 
 - Image editing (Edit button in the viewer, E key, right-click): 90° rotation, horizontal and vertical flips, crop (free, original, 1:1, 4:3, 3:2, 16:9 and portrait ratios), resize (long side or percent), and a border with chosen width and color

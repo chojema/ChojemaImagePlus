@@ -1,6 +1,6 @@
 [package]
 name = "chojema-image-plus"
-version = "0.13.0"
+version = "0.14.0"
 description = "Image viewer for Windows and macOS"
 authors = ["Chulwoo Park"]
 license = "MIT"

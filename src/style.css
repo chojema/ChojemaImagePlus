@@ -792,6 +792,28 @@ body.resizing * {
   font-size: 24px;
 }
 
+/* Subfolder cells: a large folder icon; one click opens the folder. */
+.folder-cell {
+  cursor: pointer;
+}
+
+.folder-cell .frame {
+  background: none;
+}
+
+.folder-cell .frame svg {
+  width: 62%;
+  height: 62%;
+  fill: #e0b24a;
+  stroke: #c8952a;
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+
+.folder-cell:hover .frame svg {
+  fill: #ebc160;
+}
+
 .cell .name {
   flex-shrink: 0;
   height: 16px;

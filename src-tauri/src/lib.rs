@@ -81,14 +81,23 @@ async fn open_paths(
     Ok(listing)
 }
 
+/// What the image list shows for a folder: its subfolders first, then its images.
+#[derive(serde::Serialize)]
+struct Contents {
+    folders: Vec<folders::Sub>,
+    images: Vec<files::Entry>,
+}
+
 #[tauri::command]
-async fn browse(dir: String, library: tauri::State<'_, Library>) -> Result<Vec<files::Entry>, String> {
+async fn browse(dir: String, library: tauri::State<'_, Library>) -> Result<Contents, String> {
     let path = PathBuf::from(&dir);
-    let entries = tauri::async_runtime::spawn_blocking(move || files::scan(&path))
-        .await
-        .map_err(|_| "failed".to_string())??;
+    let contents = tauri::async_runtime::spawn_blocking(move || {
+        files::scan(&path).map(|images| Contents { folders: folders::subfolders(&path), images })
+    })
+    .await
+    .map_err(|_| "failed".to_string())??;
     library.touch_recent(&dir);
-    Ok(entries)
+    Ok(contents)
 }
 
 #[tauri::command]

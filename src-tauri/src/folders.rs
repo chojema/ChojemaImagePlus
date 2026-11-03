@@ -86,6 +86,25 @@ fn folder(path: PathBuf, name: Option<String>) -> Folder {
     }
 }
 
+/// A subfolder shown as a cell in the image list.
+#[derive(Serialize)]
+pub struct Sub {
+    pub path: String,
+    pub name: String,
+}
+
+/// Visible subfolders of `dir`, by name, without looking inside them (cheap on cloud drives).
+pub fn subfolders(dir: &Path) -> Vec<Sub> {
+    let mut list: Vec<Sub> = visible_dirs(dir)
+        .map(|p| Sub {
+            name: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+            path: p.to_string_lossy().into_owned(),
+        })
+        .collect();
+    list.sort_by(|a, b| natural_cmp(&a.name, &b.name));
+    list
+}
+
 pub fn children(dir: &Path) -> Result<Vec<Folder>, String> {
     if !dir.is_dir() {
         return Err("not_found".into());
@@ -133,3 +152,21 @@ pub fn roots(places: Vec<(PathBuf, String)>) -> Roots {
     Roots { places, drives }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::subfolders;
+
+    #[test]
+    fn subfolders_lists_visible_folders_by_name_and_skips_files() {
+        let base = std::env::temp_dir().join(format!("image-plus-subs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for d in ["b 10", "b 9", "A", ".hidden"] {
+            std::fs::create_dir_all(base.join(d)).unwrap();
+        }
+        std::fs::write(base.join("photo.jpg"), b"x").unwrap();
+        let names: Vec<String> = subfolders(&base).into_iter().map(|s| s.name).collect();
+        assert_eq!(names, ["A", "b 9", "b 10"]);
+        let _ = std::fs::remove_dir_all(base);
+    }
+}

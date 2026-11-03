@@ -30,10 +30,26 @@ interface Hooks {
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
+/** A subfolder, shown before the images; clicking it opens it. */
+interface Sub {
+  path: string;
+  name: string;
+}
+
+interface Contents {
+  folders: Sub[];
+  images: Entry[];
+}
+
+const FOLDER_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>';
+
 /** Thumbnail grid of the images in one folder, with multi-selection. */
 export class Gallery {
   folder: string | null = null;
   entries: Entry[] = [];
+  /** Subfolders, laid out before the images. Cells are keyed by slot: folders first, then image i at slot folders.length + i. */
+  folders: Sub[] = [];
   private selected = new Set<number>();
   private focus = -1;
   private anchor = -1;
@@ -143,12 +159,24 @@ export class Gallery {
         this.select(new Set());
         return;
       }
+      if (cell.dataset.folder) {
+        this.hooks.navigate(cell.dataset.folder);
+        return;
+      }
       this.clickCell(Number(cell.dataset.index), e);
     });
     this.grid.addEventListener("contextmenu", (e) => {
       const cell = (e.target as Element).closest<HTMLElement>(".cell");
       if (!cell) return;
       e.preventDefault();
+      const sub = cell.dataset.folder;
+      if (sub) {
+        showMenu(e.clientX, e.clientY, [
+          { label: t.menuOpen, run: () => this.hooks.navigate(sub) },
+          { label: t.menuReveal, run: () => this.hooks.reveal(sub) },
+        ]);
+        return;
+      }
       const i = Number(cell.dataset.index);
       if (!this.selected.has(i)) {
         this.focus = i;
@@ -168,7 +196,7 @@ export class Gallery {
       ]);
     });
     this.grid.addEventListener("dblclick", (e) => {
-      const cell = (e.target as Element).closest<HTMLElement>(".cell");
+      const cell = (e.target as Element).closest<HTMLElement>(".cell[data-index]");
       if (cell) this.openAt(Number(cell.dataset.index));
     });
   }
@@ -278,6 +306,7 @@ export class Gallery {
   showEmpty(): void {
     this.folder = null;
     this.entries = [];
+    this.folders = [];
     this.render();
   }
 
@@ -285,10 +314,11 @@ export class Gallery {
   async load(dir: string, focusPath?: string): Promise<boolean> {
     const token = ++this.loadToken;
     try {
-      const entries = await invoke<Entry[]>("browse", { dir });
+      const contents = await invoke<Contents>("browse", { dir });
       if (token !== this.loadToken) return false;
       this.folder = dir;
-      this.entries = this.sorted(entries);
+      this.folders = this.sortedFolders(contents.folders);
+      this.entries = this.sorted(contents.images);
       const i = focusPath ? this.entries.findIndex((e) => samePath(e.path, focusPath)) : -1;
       this.focus = i;
       this.anchor = i;
@@ -313,31 +343,39 @@ export class Gallery {
     if (!this.folder) return;
     const dir = this.folder;
     const token = ++this.loadToken;
-    let entries: Entry[];
+    let contents: Contents;
     try {
-      entries = await invoke<Entry[]>("browse", { dir });
+      contents = await invoke<Contents>("browse", { dir });
     } catch {
       return;
     }
     if (token !== this.loadToken || dir !== this.folder) return;
-    const next = this.sorted(entries);
+    const next = this.sorted(contents.images);
+    const nextFolders = this.sortedFolders(contents.folders);
     const same = (a: Entry | undefined, b: Entry | undefined) =>
       !!a && !!b && a.path === b.path && a.modified === b.modified && a.size === b.size;
-    if (!force && next.length === this.entries.length && next.every((e, i) => same(e, this.entries[i]))) return;
+    // Image cells sit at slots after the folders, so a different folder list moves every one of them.
+    const foldersSame =
+      nextFolders.length === this.folders.length && nextFolders.every((f, i) => f.path === this.folders[i].path);
+    const imagesSame = next.length === this.entries.length && next.every((e, i) => same(e, this.entries[i]));
+    if (!force && foldersSame && imagesSame) return;
 
     const chosen = new Set([...this.selected].map((i) => this.entries[i]?.path));
     const focusPath = this.entries[this.focus]?.path;
     const anchorPath = this.entries[this.anchor]?.path;
     const top = this.grid.scrollTop;
     const old = this.entries;
+    const nf = this.folders.length;
     this.entries = next;
+    this.folders = nextFolders;
     this.selected = new Set(next.flatMap((e, i) => (chosen.has(e.path) ? [i] : [])));
     this.focus = focusPath ? next.findIndex((e) => e.path === focusPath) : -1;
     this.anchor = anchorPath ? next.findIndex((e) => e.path === anchorPath) : -1;
-    for (const [i, cell] of this.cells) {
-      if (!force && same(old[i], next[i])) continue;
+    for (const [slot, cell] of this.cells) {
+      const keep = !force && foldersSame && (slot < nf || same(old[slot - nf], next[slot - nf]));
+      if (keep) continue;
       cell.remove();
-      this.cells.delete(i);
+      this.cells.delete(slot);
       const img = cell.querySelector("img");
       if (img) this.unloaded.delete(img);
     }
@@ -375,8 +413,15 @@ export class Gallery {
     return [...list].sort((a, b) => dir * compare[settings.sort](a, b));
   }
 
+  /** Folders by name, following the list's direction when it is sorted by name. */
+  private sortedFolders(list: Sub[]): Sub[] {
+    const dir = settings.sort === "name" && settings.sortDesc ? -1 : 1;
+    return [...list].sort((a, b) => dir * collator.compare(a.name, b.name));
+  }
+
   private resort(): void {
     const keep = this.current?.path;
+    this.folders = this.sortedFolders(this.folders);
     const chosen = new Set([...this.selected].map((i) => this.entries[i]?.path));
     this.entries = this.sorted(this.entries);
     this.selected = new Set(this.entries.flatMap((e, i) => (chosen.has(e.path) ? [i] : [])));
@@ -402,7 +447,7 @@ export class Gallery {
 
   private updateEmpty(): void {
     const hasFolder = this.folder !== null;
-    this.empty.hidden = hasFolder && this.entries.length > 0;
+    this.empty.hidden = hasFolder && this.slots > 0;
     this.emptyText.textContent = hasFolder ? t.folderEmpty : t.emptyText;
     this.empty.querySelector<HTMLElement>(".empty-actions")!.hidden = hasFolder;
     this.root.classList.toggle("no-folder", !hasFolder);
@@ -444,12 +489,17 @@ export class Gallery {
     const before = this.metrics;
     this.computeMetrics();
     const m = this.metrics;
-    const rows = Math.ceil(this.entries.length / m.cols);
+    const rows = Math.ceil(this.slots / m.cols);
     this.canvas.style.height = `${rows ? rows * m.rowH - m.gap + m.pad * 2 : 0}px`;
     if (before.cols !== m.cols || before.cellW !== m.cellW) {
       for (const [i, cell] of this.cells) this.place(cell, i);
     }
     this.renderVisible();
+  }
+
+  /** Cells in the grid: folders, then images. */
+  private get slots(): number {
+    return this.folders.length + this.entries.length;
   }
 
   private schedule(): void {
@@ -471,7 +521,7 @@ export class Gallery {
 
   private renderVisible(): void {
     const m = this.metrics;
-    if (!this.entries.length || !m.rowH) {
+    if (!this.slots || !m.rowH) {
       for (const cell of this.cells.values()) cell.remove();
       this.cells.clear();
       this.unloaded.clear();
@@ -482,7 +532,7 @@ export class Gallery {
     const firstRow = Math.max(0, Math.floor(top / m.rowH) - overscan);
     const lastRow = Math.floor((top + this.grid.clientHeight) / m.rowH) + overscan;
     const first = firstRow * m.cols;
-    const last = Math.min(this.entries.length - 1, (lastRow + 1) * m.cols - 1);
+    const last = Math.min(this.slots - 1, (lastRow + 1) * m.cols - 1);
     for (const [i, cell] of this.cells) {
       if (i < first || i > last) {
         cell.remove();
@@ -503,7 +553,10 @@ export class Gallery {
     this.loadThumbs();
   }
 
-  private makeCell(i: number): HTMLElement {
+  private makeCell(slot: number): HTMLElement {
+    const nf = this.folders.length;
+    if (slot < nf) return this.makeFolderCell(this.folders[slot]);
+    const i = slot - nf;
     const entry = this.entries[i];
     const cell = document.createElement("div");
     cell.className = "cell";
@@ -523,6 +576,23 @@ export class Gallery {
     const name = document.createElement("span");
     name.className = "name";
     name.textContent = entry.name;
+    cell.append(frame, name);
+    return cell;
+  }
+
+  private makeFolderCell(sub: Sub): HTMLElement {
+    const cell = document.createElement("div");
+    cell.className = "cell folder-cell";
+    cell.dataset.folder = sub.path;
+    // Images dragged onto a subfolder are moved or copied into it.
+    cell.dataset.drop = sub.path;
+    cell.title = sub.path;
+    const frame = document.createElement("div");
+    frame.className = "frame";
+    frame.innerHTML = FOLDER_ICON;
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = sub.name;
     cell.append(frame, name);
     return cell;
   }
@@ -556,9 +626,11 @@ export class Gallery {
   }
 
   private paintSelection(): void {
-    for (const [i, cell] of this.cells) {
-      cell.classList.toggle("selected", this.selected.has(i));
-      cell.classList.toggle("focus", i === this.focus);
+    const nf = this.folders.length;
+    for (const [slot, cell] of this.cells) {
+      if (slot < nf) continue;
+      cell.classList.toggle("selected", this.selected.has(slot - nf));
+      cell.classList.toggle("focus", slot - nf === this.focus);
     }
     this.count.textContent = this.folder ? t.count(this.entries.length, this.selected.size) : "";
     const n = this.selected.size;
@@ -599,10 +671,11 @@ export class Gallery {
     this.select(new Set([i]));
   }
 
+  /** Scrolls image `i` (not counting the folder cells before it) into view. */
   private scrollTo(i: number): void {
     const m = this.metrics;
     if (!m.rowH) return;
-    const top = m.pad + Math.floor(i / m.cols) * m.rowH;
+    const top = m.pad + Math.floor((this.folders.length + i) / m.cols) * m.rowH;
     const bottom = top + m.cellH;
     const view = this.grid.clientHeight;
     if (top < this.grid.scrollTop) this.grid.scrollTop = top - m.pad;
@@ -729,7 +802,7 @@ export class Gallery {
     };
 
     this.grid.addEventListener("pointerdown", (e) => {
-      const cell = (e.target as Element).closest<HTMLElement>(".cell");
+      const cell = (e.target as Element).closest<HTMLElement>(".cell[data-index]");
       if (e.button !== 0 || !cell) return;
       start = { x: e.clientX, y: e.clientY, index: Number(cell.dataset.index), id: e.pointerId };
     });
