@@ -1,11 +1,13 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { $, Entry, formatSize, parentOf, samePath } from "./common";
 import { errorText, t } from "./i18n";
+import { MAX_COMPARE } from "./compare";
 import { saveSettings, settings, SortKey } from "./settings";
 
 interface Hooks {
   navigate: (path: string) => void;
   open: (entries: Entry[], index: number) => void;
+  compare: (entries: Entry[]) => void;
   favorite: () => void;
   chooseFolder: () => void;
   chooseFile: () => void;
@@ -51,6 +53,7 @@ export class Gallery {
     const titles: Record<string, string> = {
       up: t.up,
       "sort-dir": t.sortDir,
+      compare: t.compare,
       favorite: t.favoriteToggle,
       refresh: t.refresh,
       open: t.openTitle,
@@ -112,6 +115,9 @@ export class Gallery {
       case "favorite":
         this.hooks.favorite();
         break;
+      case "compare":
+        this.compareSelection();
+        break;
       case "refresh":
         if (this.folder) void this.load(this.folder, this.current?.path);
         break;
@@ -119,6 +125,13 @@ export class Gallery {
         this.hooks.chooseFolder();
         break;
     }
+  }
+
+  private compareSelection(): void {
+    const n = this.selected.size;
+    if (n < 2) return this.hooks.toast(t.compareNeed);
+    if (n > MAX_COMPARE) return this.hooks.toast(t.compareTooMany);
+    this.hooks.compare([...this.selected].sort((a, b) => a - b).map((i) => this.entries[i]));
   }
 
   setFavorite(on: boolean): void {
@@ -262,6 +275,8 @@ export class Gallery {
       cells[i].classList.toggle("focus", i === this.focus);
     }
     this.count.textContent = this.folder ? t.count(this.entries.length, this.selected.size) : "";
+    const n = this.selected.size;
+    $<HTMLButtonElement>("compare-button").classList.toggle("ready", n >= 2 && n <= MAX_COMPARE);
   }
 
   private select(next: Set<number>): void {
@@ -342,6 +357,11 @@ export class Gallery {
     if (e.code === "Backspace") {
       e.preventDefault();
       this.command("up");
+      return true;
+    }
+    if (e.code === "KeyC") {
+      e.preventDefault();
+      this.command("compare");
       return true;
     }
     if (e.code === "F5") {

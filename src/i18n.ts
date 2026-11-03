@@ -57,6 +57,17 @@ const ko = {
   clearCache: "저장된 썸네일 지우기",
   cacheCleared: "저장된 썸네일을 지웠습니다.",
   close: "닫기",
+  compare: "나란히 비교 (C) — 2~4장 선택",
+  compareNeed: "비교할 이미지를 2~4장 선택하세요.",
+  compareTooMany: "한 번에 4장까지 비교할 수 있습니다.",
+  compareTitle: (n: number) => `${n}장 비교`,
+  compareLayout: "좌우 / 위아래 배치 (V)",
+  compareSync: "확대·이동 함께 맞추기 (S)",
+  compareSyncOn: "확대·이동을 함께 맞춥니다.",
+  compareSyncOff: "칸마다 따로 확대·이동합니다.",
+  compareActual: "모두 실제 크기 (1)",
+  compareClose: "선택한 칸 닫기 (Delete)",
+  compareMin: "비교는 2장 이상이어야 합니다.",
 };
 
 const en: typeof ko = {
@@ -118,6 +129,17 @@ const en: typeof ko = {
   clearCache: "Delete stored thumbnails",
   cacheCleared: "Stored thumbnails deleted.",
   close: "Close",
+  compare: "Compare side by side (C) — select 2 to 4",
+  compareNeed: "Select 2 to 4 images to compare.",
+  compareTooMany: "You can compare up to 4 images at once.",
+  compareTitle: (n: number) => `Comparing ${n}`,
+  compareLayout: "Side by side / stacked (V)",
+  compareSync: "Keep zoom and position in step (S)",
+  compareSyncOn: "Zoom and position move together.",
+  compareSyncOff: "Each image zooms and pans on its own.",
+  compareActual: "All at actual size (1)",
+  compareClose: "Close selected pane (Delete)",
+  compareMin: "Comparison needs at least 2 images.",
 };
 
 export const isKorean = navigator.language.toLowerCase().startsWith("ko");

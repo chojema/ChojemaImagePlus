@@ -4,6 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { $, Entry, samePath, showToast } from "./common";
+import { Compare } from "./compare";
 import { Gallery } from "./gallery";
 import { errorText, t } from "./i18n";
 import { Library } from "./library";
@@ -20,7 +21,8 @@ interface Listing {
 const APP_NAME = "Chojema Image+";
 const appWindow = getCurrentWindow();
 let extensions: string[] = [];
-let mode: "browser" | "viewer" = "browser";
+type Mode = "browser" | "viewer" | "compare";
+let mode: Mode = "browser";
 
 const library = new Library($("side-library"), $("panel"), {
   open: (path) => void navigate(path),
@@ -30,6 +32,7 @@ const tree = new FolderTree($("tree"), (path) => void navigate(path));
 const gallery = new Gallery({
   navigate: (path) => void navigate(path),
   open: (entries, index) => openViewer(entries, index, gallery.folder),
+  compare: (entries) => openCompare(entries),
   favorite: () => toggleFavorite(),
   chooseFolder: () => void chooseFolder(),
   chooseFile: () => void chooseFile(),
@@ -40,19 +43,20 @@ const viewer = new Viewer({
   favorite: () => toggleFavorite(),
   folders: () => library.toggleOpen(),
 });
+const compare = new Compare({ back: () => backFromCompare() });
 const settingsDialog = new SettingsDialog();
 
 function folderName(path: string): string {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 }
 
-function setMode(next: "browser" | "viewer"): void {
+function setMode(next: Mode): void {
   mode = next;
-  document.body.classList.toggle("mode-browser", next === "browser");
-  document.body.classList.toggle("mode-viewer", next === "viewer");
+  for (const m of ["browser", "viewer", "compare"]) document.body.classList.toggle(`mode-${m}`, m === next);
+  if (next !== "viewer") viewer.close();
+  if (next !== "compare") compare.close();
   if (next === "browser") {
     library.close();
-    viewer.close();
     void appWindow.setTitle(gallery.folder ? `${folderName(gallery.folder)} - ${APP_NAME}` : APP_NAME);
     $("grid").focus();
   }
@@ -96,6 +100,16 @@ function openViewer(entries: Entry[], index: number, folder: string | null): voi
   if (!entries.length) return;
   setMode("viewer");
   viewer.open(entries, index, folder);
+}
+
+function openCompare(entries: Entry[]): void {
+  setMode("compare");
+  compare.open(entries);
+}
+
+function backFromCompare(): void {
+  if (compare.isFullscreen) void compare.actions.fullscreen();
+  setMode("browser");
 }
 
 function back(): void {
@@ -181,6 +195,15 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape" && library.isOpen) {
     library.close();
+    return;
+  }
+  if (mode === "compare") {
+    if (e.key === "Escape") {
+      if (compare.isFullscreen) compare.actions.fullscreen();
+      else backFromCompare();
+      return;
+    }
+    compare.handleKey(e);
     return;
   }
   if (mode === "viewer") {

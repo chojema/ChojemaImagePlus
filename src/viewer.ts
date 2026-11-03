@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { $, Entry, formatSize, isWindows, showToast } from "./common";
+import { $, Entry, formatSize, isFullscreen, isWindows, showToast, toggleFullscreen } from "./common";
 import { t } from "./i18n";
 import { View } from "./view";
 
@@ -131,7 +131,7 @@ export class Viewer {
   }
 
   get isFullscreen(): boolean {
-    return document.body.classList.contains("fullscreen");
+    return isFullscreen();
   }
 
   open(entries: Entry[], index: number, folder: string | null): void {
@@ -159,10 +159,8 @@ export class Viewer {
     return true;
   }
 
-  async toggleFullscreen(force?: boolean): Promise<void> {
-    const next = force ?? !(await this.appWindow.isFullscreen());
-    await this.appWindow.setFullscreen(next);
-    document.body.classList.toggle("fullscreen", next);
+  toggleFullscreen(force?: boolean): Promise<void> {
+    return toggleFullscreen(force);
   }
 
   updateInfo(): void {

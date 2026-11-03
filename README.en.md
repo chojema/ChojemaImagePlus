@@ -12,6 +12,9 @@ A lightweight, fast image viewer for Windows and macOS.
 - **Image view**: double-click a thumbnail or press Enter to view it large; press Esc to return to the list.
   - Fit to window, actual size, zoom, and drag to pan
   - Rotate by 90° (view only; the original file is not changed), full screen
+- **Side-by-side compare**: select 2 to 4 thumbnails and click Compare or press C.
+  - 2 images side by side or stacked, 3 in a row, 4 in a 2×2 grid
+  - Keep zoom and position in step across panes (the same area is shown even at different resolutions); rotate or close each pane
 - Favorite folders (add, remove, rename, reorder) and a recent folders list
 - Drag and drop, open several files at once, image file associations (open with a double-click)
 - Settings: screen shown when the app opens (last folder / empty screen), delete stored thumbnails
@@ -49,6 +52,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Move between thumbnails / extend selection | Arrow keys / Shift + arrow keys |
 | View large | Enter, Space, double-click |
 | Select all | Ctrl (⌘) + A |
+| Compare 2–4 selected images | C |
 | Parent folder | Backspace, Alt + ↑ |
 | Refresh | F5 |
 | Hide or show sidebar | Ctrl (⌘) + B |
@@ -66,6 +70,19 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Rotate right / left | R / L |
 | Full screen / exit | F, F11, Enter / Esc |
 | Favorites and recent folders | Ctrl (⌘) + B |
+
+**Compare view**
+
+| Action | Keys |
+|---|---|
+| Back to list | Esc |
+| Zoom in / out | + / - , wheel, trackpad pinch |
+| Fit all / all at actual size | 0 / 1 |
+| Keep zoom and position in step on/off | S |
+| Side by side / stacked (2 images) | V |
+| Select next pane | Tab |
+| Rotate / close selected pane | R, L / Delete |
+| Full screen | F |
 
 **Everywhere**
 

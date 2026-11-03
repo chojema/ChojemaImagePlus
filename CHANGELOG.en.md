@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Side-by-side compare: select 2 to 4 thumbnails and click Compare or press C
+- 2 images side by side or stacked, 3 in a row, 4 in a 2×2 grid
+- Zoom and position kept in step across panes (the same area even at different resolutions), toggle with S
+- Rotate or close each pane, full screen
+
 ## 0.3.0
 
 - List view: folder tree on the left (favorites, recent folders, locations) and thumbnails on the right

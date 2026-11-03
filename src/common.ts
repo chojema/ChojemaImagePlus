@@ -1,3 +1,5 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
 export interface Entry {
   path: string;
   name: string;
@@ -55,4 +57,15 @@ export function showToast(text: string): void {
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => (el.hidden = true), 1600);
+}
+
+export function isFullscreen(): boolean {
+  return document.body.classList.contains("fullscreen");
+}
+
+export async function toggleFullscreen(force?: boolean): Promise<void> {
+  const win = getCurrentWindow();
+  const next = force ?? !(await win.isFullscreen());
+  await win.setFullscreen(next);
+  document.body.classList.toggle("fullscreen", next);
 }

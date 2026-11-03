@@ -1,6 +1,14 @@
 const MIN_SCALE = 0.02;
 const MAX_SCALE = 32;
 
+/** Zoom relative to "fit" and the image point under the stage centre (0..1), comparable across image sizes. */
+export interface ViewState {
+  fitted: boolean;
+  factor: number;
+  u: number;
+  v: number;
+}
+
 /** Position, zoom, and rotation of the image inside the stage. */
 export class View {
   width = 0;
@@ -94,6 +102,31 @@ export class View {
     this.rotation = (((this.rotation + delta) % 360) + 360) % 360;
     if (this.fitted) this.fit();
     else this.apply();
+  }
+
+  getState(): ViewState {
+    const { w, h } = this.box;
+    const s = this.scale || 1;
+    return {
+      fitted: this.fitted,
+      factor: s / this.fitScale(),
+      u: 0.5 - this.tx / (s * (w || 1)),
+      v: 0.5 - this.ty / (s * (h || 1)),
+    };
+  }
+
+  setState(state: ViewState): void {
+    if (!this.loaded) return;
+    if (state.fitted) {
+      this.fit();
+      return;
+    }
+    const { w, h } = this.box;
+    this.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, state.factor * this.fitScale()));
+    this.tx = -(state.u - 0.5) * w * this.scale;
+    this.ty = -(state.v - 0.5) * h * this.scale;
+    this.fitted = false;
+    this.apply();
   }
 
   private clamp(): void {
