@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { $, isWindows, showToast } from "./common";
+import { $, isWindows, parentOf, samePath, showToast } from "./common";
 import { errorText, t } from "./i18n";
 import { ask } from "./modal";
 import { saveSettings, settings } from "./settings";
@@ -53,7 +53,7 @@ function baseName(path: string): string {
 
 /** Moving and copying images (and their pair files) between folders, with conflict prompts and undo. */
 export class Transfer {
-  private last: { mode: Mode; items: Done[] } | null = null;
+  private last: { mode: Mode | "rename"; items: Done[] } | null = null;
   private busy = false;
   private readonly panel = $<HTMLElement>("progress");
   private readonly label = $<HTMLElement>("progress-label");
@@ -69,31 +69,104 @@ export class Transfer {
     });
   }
 
-  async start(sources: string[], dest: string, requestedMode?: Mode): Promise<void> {
-    if (this.busy || !sources.length) return;
+  async start(sources: string[], dest: string, requestedMode?: Mode): Promise<Done[]> {
+    if (this.busy || !sources.length) return [];
     this.busy = true;
     try {
-      await this.perform(sources, dest, requestedMode);
+      return await this.perform(sources, dest, requestedMode);
     } finally {
       this.busy = false;
     }
   }
 
-  private async perform(sources: string[], dest: string, requestedMode?: Mode): Promise<void> {
+  async createFolder(parent: string): Promise<string | null> {
+    if (this.busy) return null;
+    this.busy = true;
+    try {
+      let name = t.newFolder;
+      while (true) {
+        const a = await ask({ title: t.newFolder, input: { label: t.entryName, value: name },
+          choices: [{ id: "create", label: t.create, primary: true }, { id: "cancel", label: t.cancel }], cancel: "cancel" });
+        if (a.choice === "cancel") return null;
+        name = a.value;
+        try {
+          const path = await invoke<string>("create_folder", { parent, name });
+          this.refresh();
+          showToast(t.folderCreated);
+          return path;
+        } catch (err) { showToast(errorText(err), 4000); }
+      }
+    } finally { this.busy = false; }
+  }
+
+  async rename(path: string, folder: boolean): Promise<Done[]> {
+    if (this.busy) return [];
+    this.busy = true;
+    try {
+      const plan = folder ? { pairs: [] } : await invoke<{ pairs: string[] }>("trash_plan", { sources: [path] });
+      let name = baseName(path);
+      while (true) {
+        const dot = name.lastIndexOf(".");
+        const a = await ask({ title: t.entryRename, message: path,
+          input: { label: t.entryName, value: name, selectEnd: !folder && dot > 0 ? dot : name.length },
+          checkbox: plan.pairs.length ? { label: t.includePairs(plan.pairs.length), checked: settings.includePairs } : undefined,
+          choices: [{ id: "rename", label: t.rename, primary: true }, { id: "cancel", label: t.cancel }], cancel: "cancel" });
+        if (a.choice === "cancel") return [];
+        name = a.value;
+        try {
+          if (plan.pairs.length && a.checked !== settings.includePairs) saveSettings({ includePairs: a.checked });
+          const result = await invoke<Outcome>("rename_entry", { path, name, includePairs: a.checked });
+          if (result.done.length) {
+            this.last = { mode: "rename", items: result.done };
+            this.refresh(result.done);
+            showToast(`${t.entryRenamed} · ${t.undoHint}`, 4000);
+          }
+          if (result.failed.length) await this.reportFailures(result.failed);
+          return result.done;
+        } catch (err) { showToast(errorText(err), 4000); }
+      }
+    } catch (err) { showToast(errorText(err)); return []; }
+    finally { this.busy = false; }
+  }
+
+  async copyToClipboard(paths: string[], cut: boolean): Promise<void> {
+    if (this.busy || !paths.length) return;
+    try {
+      await invoke("clipboard_write", { paths, cut });
+      showToast(cut ? t.clipboardCutReady(paths.length) : t.clipboardCopied(paths.length), 3500);
+    } catch (err) { showToast(errorText(err)); }
+  }
+
+  async paste(dest: string, forceMove = false): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      const files = await invoke<{ paths: string[]; cut: boolean; token: string }>("clipboard_read");
+      if (!files.paths.length) { showToast(errorText("clipboard_empty")); return; }
+      const move = forceMove || files.cut;
+      const done = await this.perform(files.paths, dest, move ? "move" : "copy");
+      if (move && done.length) {
+        await invoke("clipboard_consume", { token: files.token, moved: done.map((d) => d.from) });
+      }
+    } catch (err) { showToast(errorText(err)); }
+    finally { this.busy = false; }
+  }
+
+  private async perform(sources: string[], dest: string, requestedMode?: Mode): Promise<Done[]> {
     let plan: Plan;
     try {
       plan = await invoke<Plan>("transfer_plan", { sources, dest, includePairs: true });
     } catch (err) {
       showToast(err === "protected_dest" ? t.protectedDest : errorText(err));
-      return;
+      return [];
     }
-    if (plan.same_folder) {
+    if (plan.same_folder && requestedMode !== "copy") {
       showToast(t.sameFolder);
-      return;
+      return [];
     }
     if (requestedMode === "move" && plan.copy_only) {
       showToast(t.copyOnly);
-      return;
+      return [];
     }
 
     const images = plan.files.filter((f) => !f.pair).length;
@@ -118,7 +191,7 @@ export class Transfer {
           ],
       cancel: "cancel",
     });
-    if (answer.choice === "cancel") return;
+    if (answer.choice === "cancel") return [];
     const mode = answer.choice as Mode;
     if (plan.pairs && answer.checked !== settings.includePairs) saveSettings({ includePairs: answer.checked });
     const files = plan.files.filter((f) => !f.pair || (plan.pairs > 0 && answer.checked));
@@ -145,13 +218,13 @@ export class Transfer {
             checkbox: remaining > 0 ? { label: t.applyToRest(remaining), checked: false } : undefined,
             choices: [
               { id: "rename", label: t.keepBoth, primary: true },
-              { id: "overwrite", label: t.overwrite },
+              ...(!group.some((f) => samePath(parentOf(f.src), dest)) ? [{ id: "overwrite", label: t.overwrite }] : []),
               { id: "skip", label: t.skip },
               { id: "cancel", label: t.cancelAll },
             ],
             cancel: "cancel",
           });
-          if (a.choice === "cancel") return;
+          if (a.choice === "cancel") return [];
           resolution = a.choice as Resolution;
           if (a.checked) forAll = resolution;
         }
@@ -165,7 +238,7 @@ export class Transfer {
       outcome = await invoke<Outcome>("transfer_run", { mode, dest, jobs });
     } catch (err) {
       showToast(errorText(err));
-      return;
+      return [];
     } finally {
       clearTimeout(timer);
       this.panel.hidden = true;
@@ -180,6 +253,7 @@ export class Transfer {
     if (outcome.done.length) parts.push(t.undoHint);
     showToast(parts.join(" · "), 4000);
     if (outcome.failed.length) await this.reportFailures(outcome.failed);
+    return outcome.done;
   }
 
   /** Sends images (and, if chosen, their pair files) to the trash. Resolves with the images trashed. */
@@ -224,10 +298,12 @@ export class Transfer {
     this.last = null;
     this.busy = true;
     try {
-      const outcome = await invoke<Outcome>("transfer_undo", { mode: last.mode, items: last.items });
-      this.refresh(last.mode === "move" ? outcome.done : undefined);
+      const outcome = await invoke<Outcome>(last.mode === "rename" ? "rename_undo" : "transfer_undo", { mode: last.mode, items: last.items });
+      this.refresh(last.mode !== "copy" ? outcome.done : undefined);
       showToast(t.undone(outcome.done.length));
       if (outcome.failed.length) await this.reportFailures(outcome.failed);
+    } catch (err) {
+      showToast(errorText(err));
     } finally {
       this.busy = false;
     }

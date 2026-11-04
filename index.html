@@ -33,6 +33,7 @@
     <header class="gallery-bar">
       <button data-browse="back" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" /></svg></button>
       <button data-browse="up" type="button"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" /></svg></button>
+      <button data-browse="new-folder" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 10v6M9 13h6" /></svg></button>
       <div class="crumbs"></div>
       <span class="gallery-count"></span>
       <select class="sort"></select>
@@ -50,6 +51,11 @@
       <button data-browse="refresh" type="button"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" /></svg></button>
       <button data-browse="open" type="button"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></button>
     </header>
+    <div class="gallery-search">
+      <input class="list-search" type="search" autocomplete="off" spellcheck="false" />
+      <button class="clear-search" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
+      <span class="search-count" role="status"></span>
+    </div>
     <div class="grid" tabindex="0"></div>
     <section class="gallery-empty">
       <p class="gallery-empty-text"></p>

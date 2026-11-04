@@ -40,6 +40,21 @@ export class FolderTree {
     if (this.active) this.highlight(this.active);
   }
 
+  async refresh(): Promise<void> {
+    const open = new Set([...this.container.querySelectorAll<HTMLElement>(".node.open")].map((n) => n.dataset.path));
+    const active = this.active;
+    await this.load();
+    const restore = async (nodes: HTMLElement[]): Promise<void> => {
+      for (const item of nodes) {
+        if (!open.has(item.dataset.path)) continue;
+        await this.expand(item);
+        await restore([...item.querySelectorAll<HTMLElement>(":scope > .children > .node")]);
+      }
+    };
+    await restore(this.roots);
+    if (active) await this.reveal(active);
+  }
+
   private node(folder: Folder, depth: number, kind = ""): HTMLElement {
     const item = document.createElement("div");
     item.className = `node ${kind}`;

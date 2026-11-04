@@ -11,6 +11,10 @@ A lightweight, fast image viewer for Windows and macOS.
   - The list updates automatically when other programs add or remove files in the folder.
   - Sort by name, date modified, or size; adjust thumbnail size
   - Select several images with Ctrl (⌘) or Shift + click and browse only the selection
+- **Organize and search in the list**: create a folder inside the current folder with the New folder button, the background context menu, or Ctrl/⌘ + Shift + N. The new folder is selected afterwards.
+  - Select one image and press F2 or choose Rename from its context menu to change the actual filename. Subfolders can also be renamed from their context menu. Existing names are never replaced; pair files can be renamed together. Undo with Ctrl/⌘ + Z.
+  - Search (Ctrl/⌘ + F) filters file and subfolder names in the current folder as you type, ignoring case. Clear with Esc or the clear button. Select all, move and copy apply only to matching images. Each pane has its own search.
+  - Copy (Ctrl/⌘ + C), cut (Ctrl/⌘ + X) and paste (Ctrl/⌘ + V) image files using the system file clipboard, including files copied in Finder or File Explorer. Pasting in the app uses the existing pair-file, conflict and undo workflow. Cut files move only after a successful paste. Copying and pasting in the same folder can create a copy with a new name. On macOS, ⌘ + Option + V moves files copied in Finder.
 - **Image view**: double-click a thumbnail or press Enter to view it large; press Esc to return to the list.
   - Fit to window, actual size, zoom, and drag to pan
   - Rotate by 90° (view only; the original file is not changed), full screen
@@ -71,6 +75,10 @@ The installers are not code-signed yet, so a warning may appear the first time y
 
 | Action | Keys |
 |---|---|
+| New folder | Ctrl (⌘) + Shift + N |
+| Rename actual file or folder | F2, context menu |
+| Search names in the current list | Ctrl (⌘) + F; Esc to clear |
+| Copy / cut / paste image files | Ctrl (⌘) + C / X / V |
 | Move between thumbnails / extend selection | Arrow keys / Shift + arrow keys |
 | View large | Enter, Space, double-click |
 | Select all | Ctrl (⌘) + A |

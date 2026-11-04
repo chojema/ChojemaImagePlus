@@ -117,6 +117,7 @@ pub fn pairs_of(image: &Path) -> Vec<PathBuf> {
 /// Inside a macOS package such as a Photos library, where outside changes corrupt the package.
 pub fn in_package(path: &Path) -> bool {
     path.ancestors().any(|p| crate::folders::is_package(p))
+        || fs::canonicalize(path).is_ok_and(|real| real.ancestors().any(|p| crate::folders::is_package(p)))
 }
 
 pub fn plan(sources: &[String], dest: &Path, include_pairs: bool) -> Result<Plan, String> {
@@ -401,6 +402,22 @@ pub fn trash_files(paths: &[String]) -> Outcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn same_folder_copy_renames_group_and_preserves_originals() {
+        let (base, a, _) = setup("duplicate");
+        for n in ["A.jpg", "A.xmp"] { fs::write(a.join(n), n).unwrap(); }
+        let jobs: Vec<_> = ["A.jpg", "A.xmp"].iter().map(|n| Job {
+            src: a.join(n).to_string_lossy().into_owned(), group: 0, resolution: Some(Resolution::Rename),
+        }).collect();
+        let result = run(Mode::Copy, &a, &jobs, &AtomicBool::new(false), |_| {});
+        assert_eq!(result.done.len(), 2);
+        for (original, duplicate) in [("A.jpg", "A (2).jpg"), ("A.xmp", "A (2).xmp")] {
+            assert_eq!(fs::read(a.join(original)).unwrap(), original.as_bytes());
+            assert_eq!(fs::read(a.join(duplicate)).unwrap(), original.as_bytes());
+        }
+        fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn trash_plan_lists_unselected_pairs() {

@@ -109,6 +109,33 @@ impl Library {
         self.update(|d| d.recent.clear())
     }
 
+    pub fn relocate(&self, changes: &[crate::transfer::Done]) {
+        let folders: Vec<_> = changes.iter().filter(|d| Path::new(&d.to).is_dir()).collect();
+        if folders.is_empty() { return; }
+        let mapped = |path: &str| {
+            for d in &folders {
+                if same(path, &d.from) { return d.to.clone(); }
+                // Compare one path component at a time, preserving the original suffix.
+                for (i, c) in path.char_indices() {
+                    if (c == '/' || c == '\\') && same(&path[..i], &d.from) {
+                        return format!("{}{}", d.to, &path[i..]);
+                    }
+                }
+            }
+            path.to_string()
+        };
+        self.update(|d| {
+            for f in &mut d.favorites {
+                let next = mapped(&f.path);
+                if next != f.path {
+                    if f.name == folder_name(&f.path) { f.name = folder_name(&next); }
+                    f.path = next;
+                }
+            }
+            for p in &mut d.recent { *p = mapped(p); }
+        });
+    }
+
     /// Adds the folder if it is not a favorite yet, otherwise removes it.
     pub fn toggle_favorite(&self, path: &str) -> Snapshot {
         self.update(|d| {
@@ -213,5 +240,28 @@ mod tests {
         assert_eq!(s.recent[0].path, "/f/5");
         assert_eq!(s.recent.iter().filter(|r| r.path == "/f/5").count(), 1);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn renamed_folder_tracks_descendants_and_keeps_custom_favorite_names() {
+        let dir = std::env::temp_dir().join(format!("image-plus-relocate-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("old/nested")).unwrap();
+        let lib = Library::load(dir.join("config"));
+        let old = dir.join("old").to_string_lossy().into_owned();
+        let nested = dir.join("old/nested").to_string_lossy().into_owned();
+        lib.toggle_favorite(&old);
+        lib.toggle_favorite(&nested);
+        lib.rename_favorite(&nested, "My photos");
+        lib.touch_recent(&nested);
+        let new = dir.join("new").to_string_lossy().into_owned();
+        std::fs::rename(&old, &new).unwrap();
+        lib.relocate(&[crate::transfer::Done { from: old, to: new.clone() }]);
+        let s = lib.snapshot();
+        assert_eq!(s.favorites[0].name, "new");
+        assert_eq!(s.favorites[1].name, "My photos");
+        assert_eq!(s.favorites[1].path, format!("{new}/nested"));
+        assert!(s.favorites.iter().all(|f| f.exists));
+        assert_eq!(s.recent[0].path, format!("{new}/nested"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

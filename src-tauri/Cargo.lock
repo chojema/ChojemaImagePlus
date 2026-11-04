@@ -608,14 +608,17 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "chojema-image-plus"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "filetime",
  "image",
  "little_exif",
  "notify",
+ "objc2",
+ "objc2-app-kit",
  "objc2-core-foundation",
  "objc2-core-graphics",
+ "objc2-foundation",
  "objc2-image-io",
  "percent-encoding",
  "serde",

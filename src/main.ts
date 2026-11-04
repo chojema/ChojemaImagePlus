@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { $, Entry, parentOf, samePath, setWindowTitle, showToast } from "./common";
+import { $, Entry, parentOf, samePath, setWindowTitle, showToast, within } from "./common";
 import { AboutDialog } from "./about";
 import { Compare } from "./compare";
 import { Editor } from "./editor";
@@ -45,6 +45,10 @@ function makePane(): Gallery {
     compare: (entries) => openCompare(entries),
     transfer: (paths, dest, transferMode) => void startTransfer(paths, dest, pane, transferMode),
     trash: (paths) => void transfer.trash(paths),
+    createFolder: () => void createFolder(pane),
+    rename: (path, folder) => void renameEntry(pane, path, folder),
+    clipboard: (paths, cut) => void transfer.copyToClipboard(paths, cut),
+    paste: (forceMove) => { if (pane.folder) void transfer.paste(pane.folder, forceMove); },
     slideshow: () => void startSlideshow(pane.folder),
     export: (paths) => void startExport(paths, pane.folder, pane),
     reveal: (path) => void invoke("reveal", { path }),
@@ -142,8 +146,42 @@ async function trashFromViewer(path: string): Promise<void> {
 }
 const transfer = new Transfer((relocated = []) => {
   compare.relocate(relocated);
-  panes.forEach((p) => void p.refreshQuiet());
+  for (const p of panes) {
+    p.relocate(relocated);
+    void p.refreshQuiet();
+  }
+  if (relocated.length) {
+    const dual = relocated.find((d) => within(d.from, settings.dualFolder));
+    if (dual) saveSettings({ dualFolder: dual.to + settings.dualFolder.normalize("NFC").slice(dual.from.normalize("NFC").length) });
+    library.setActive(active().folder);
+    void library.load();
+    watchPanes();
+    setTitle(active().folder ? `${folderName(active().folder!)} - ${APP_NAME}` : APP_NAME);
+    void tree.refresh().then(() => { if (active().folder) void tree.reveal(active().folder!); });
+  }
 });
+
+async function createFolder(pane: Gallery): Promise<void> {
+  const parent = pane.folder;
+  if (!parent) return;
+  const path = await transfer.createFolder(parent);
+  if (!path) return;
+  await Promise.all(panes.filter((p) => samePath(p.folder, parent)).map((p) => p.refreshQuiet()));
+  if (samePath(pane.folder, parent)) pane.revealFolder(path);
+  await tree.refresh();
+}
+
+async function renameEntry(pane: Gallery, path: string, folder: boolean): Promise<void> {
+  const done = await transfer.rename(path, folder);
+  if (!done.length) return;
+  await Promise.all(panes.map((p) => p.refreshQuiet()));
+  const renamed = done.find((d) => samePath(d.from, path));
+  if (renamed) {
+    if (folder && samePath(pane.folder, parentOf(renamed.to))) pane.revealFolder(renamed.to);
+    else if (!folder) { pane.clearSearch(); pane.reveal(renamed.to); pane.focusGrid(); }
+  }
+  await tree.refresh();
+}
 const compare = new Compare({ back: () => backFromCompare(), transfer: transferComparedImage });
 
 async function transferComparedImage(entry: Entry, transferMode: TransferMode): Promise<void> {
@@ -358,6 +396,7 @@ function toggleSidebar(): void {
 }
 
 window.addEventListener("keydown", (e) => {
+  if (e.isComposing) return;
   if (modalOpen() || menuOpen() || slideshowDialog.isOpen || exporter.isOpen || aboutDialog.isOpen) return;
   if (editor.isOpen) {
     editor.handleKey(e);
@@ -372,6 +411,12 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   const target = e.target as HTMLElement;
+  if ((e.ctrlKey || e.metaKey) && e.code === "KeyF" && mode === "browser") {
+    e.preventDefault(); active().focusSearch(); return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === "KeyN" && mode === "browser") {
+    e.preventDefault(); active().command("new-folder"); return;
+  }
   if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
     if (e.key === "Escape") target.blur();
     return;

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0
+
+- Create a folder from the list (Ctrl/⌘ + Shift + N) and select it afterwards
+- Rename actual files and folders (F2, context menu), with optional pair files, conflict protection and undo
+- Search file and folder names in the current list (Ctrl/⌘ + F), independently in each pane and restored by Back
+- Copy, cut and paste image files through the system file clipboard (Ctrl/⌘ + C/X/V), reusing pair-file, conflict and undo handling, including named copies in the same folder
+
 ## 0.15.0
 
 - Photo details panel in the image view: file details, capture time, camera, lens, exposure, ISO and other main EXIF fields, plus GPS coordinates and altitude stored in the file (toggle with the info button or I)

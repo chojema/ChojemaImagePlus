@@ -12,7 +12,8 @@ export const isWindows = navigator.userAgent.includes("Windows");
 export const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 function normalize(p: string): string {
-  return isWindows ? p.replace(/\//g, "\\").toLowerCase() : p;
+  const text = p.normalize("NFC");
+  return isWindows ? text.replace(/\//g, "\\").toLowerCase() : text;
 }
 
 export function samePath(a: string | null | undefined, b: string | null | undefined): boolean {

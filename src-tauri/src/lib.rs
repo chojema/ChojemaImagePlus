@@ -1,4 +1,6 @@
 mod edit;
+mod clipboard;
+mod file_actions;
 mod export;
 mod files;
 mod folders;
@@ -121,6 +123,56 @@ async fn folder_children(path: String) -> Result<Vec<folders::Folder>, String> {
     tauri::async_runtime::spawn_blocking(move || folders::children(Path::new(&path)))
         .await
         .map_err(|_| "failed".to_string())?
+}
+
+#[tauri::command]
+async fn create_folder(parent: String, name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || file_actions::create_folder(Path::new(&parent), &name))
+        .await.map_err(|_| "failed".to_string())?
+}
+
+#[tauri::command]
+async fn rename_entry(path: String, name: String, include_pairs: bool, library: tauri::State<'_, Library>) -> Result<transfer::Outcome, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || file_actions::rename(Path::new(&path), &name, include_pairs))
+        .await.map_err(|_| "failed".to_string())??;
+    library.relocate(&result.done);
+    Ok(result)
+}
+
+#[tauri::command]
+async fn rename_undo(items: Vec<transfer::Done>, library: tauri::State<'_, Library>) -> Result<transfer::Outcome, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || file_actions::undo(&items))
+        .await.map_err(|_| "failed".to_string())?;
+    library.relocate(&result.done);
+    Ok(result)
+}
+
+fn clipboard_owner(window: &tauri::Window) -> Result<usize, String> {
+    #[cfg(windows)]
+    { window.hwnd().map(|h| h.0 as usize).map_err(|_| "clipboard_failed".into()) }
+    #[cfg(not(windows))]
+    { let _ = window; Ok(0) }
+}
+
+#[tauri::command]
+fn clipboard_write(window: tauri::Window, paths: Vec<String>, cut: bool) -> Result<(), String> {
+    if cut && paths.iter().any(|p| transfer::in_package(Path::new(p))
+        || std::fs::canonicalize(p).is_ok_and(|real| transfer::in_package(&real))) {
+        return Err("protected".into());
+    }
+    clipboard::write(&paths, cut, clipboard_owner(&window)?)
+}
+
+#[tauri::command]
+fn clipboard_read() -> Result<clipboard::Files, String> {
+    let mut files = clipboard::read()?;
+    files.paths.retain(|p| Path::new(p).is_file() && files::kind(Path::new(p)).is_some());
+    Ok(files)
+}
+
+#[tauri::command]
+fn clipboard_consume(window: tauri::Window, token: String, moved: Vec<String>) -> Result<(), String> {
+    clipboard::consume(&token, &moved, clipboard_owner(&window)?)
 }
 
 #[tauri::command]
@@ -420,6 +472,12 @@ pub fn run() {
             recent_clear,
             browse,
             folder_children,
+            create_folder,
+            rename_entry,
+            rename_undo,
+            clipboard_write,
+            clipboard_read,
+            clipboard_consume,
             folder_roots,
             settings_get,
             settings_set,

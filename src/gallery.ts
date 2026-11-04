@@ -1,11 +1,11 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { $, Entry, formatSize, parentOf, samePath } from "./common";
+import { $, Entry, formatSize, parentOf, samePath, within } from "./common";
 import { errorText, t } from "./i18n";
 import { MAX_COMPARE } from "./compare";
 import { showMenu } from "./menu";
 import { saveSettings, settings, SortKey } from "./settings";
 import { ThumbnailLoader } from "./thumbnails";
-import type { TransferMode } from "./transfer";
+import type { Done, TransferMode } from "./transfer";
 
 interface Hooks {
   navigate: (path: string, back?: boolean) => void;
@@ -14,6 +14,10 @@ interface Hooks {
   /** `dest` null asks for the destination folder. */
   transfer: (paths: string[], dest: string | null, mode?: TransferMode) => void;
   trash: (paths: string[]) => void;
+  createFolder: () => void;
+  rename: (path: string, folder: boolean) => void;
+  clipboard: (paths: string[], cut: boolean) => void;
+  paste: (forceMove?: boolean) => void;
   slideshow: () => void;
   export: (paths: string[]) => void;
   reveal: (path: string) => void;
@@ -46,6 +50,7 @@ interface Contents {
 interface FolderVisit {
   folder: string;
   top: number;
+  query: string;
   selected: string[];
   focus?: string;
   anchor?: string;
@@ -60,6 +65,10 @@ export class Gallery {
   entries: Entry[] = [];
   /** Subfolders, laid out before the images. Cells are keyed by slot: folders first, then image i at slot folders.length + i. */
   folders: Sub[] = [];
+  private allEntries: Entry[] = [];
+  private allFolders: Sub[] = [];
+  private folderSelection: string | null = null;
+  private readonly search: HTMLInputElement;
   private selected = new Set<number>();
   private focus = -1;
   private anchor = -1;
@@ -101,6 +110,26 @@ export class Gallery {
     this.sort = q<HTMLSelectElement>("sort");
     this.size = q<HTMLInputElement>("thumb-size");
     this.favoriteButton = q<HTMLButtonElement>("browse-favorite");
+    this.search = q<HTMLInputElement>("list-search");
+    this.search.placeholder = t.searchPlaceholder;
+    this.search.setAttribute("aria-label", t.searchList);
+    this.search.title = t.searchList;
+    this.search.addEventListener("input", () => this.applySearch());
+    this.search.addEventListener("keydown", (e) => {
+      if (e.isComposing) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.clearSearch();
+        this.focusGrid();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        this.focusGrid();
+      }
+    });
+    q("clear-search").title = t.clearSearch;
+    q("clear-search").setAttribute("aria-label", t.clearSearch);
+    q("clear-search").addEventListener("click", () => { this.clearSearch(); this.search.focus(); });
     this.root.addEventListener("pointerdown", () => hooks.activate(this), true);
     this.root.addEventListener("focusin", () => hooks.activate(this));
 
@@ -123,6 +152,7 @@ export class Gallery {
     this.size.addEventListener("change", () => saveSettings({ thumbSize: Number(this.size.value) }));
 
     const titles: Record<string, string> = {
+      "new-folder": t.newFolderAction,
       back: t.folderBack,
       up: t.up,
       "sort-dir": t.sortDir,
@@ -169,6 +199,7 @@ export class Gallery {
       }
       const cell = (e.target as Element).closest<HTMLElement>(".cell");
       if (!cell) {
+        this.folderSelection = null;
         this.select(new Set());
         return;
       }
@@ -179,17 +210,29 @@ export class Gallery {
       this.clickCell(Number(cell.dataset.index), e);
     });
     this.grid.addEventListener("contextmenu", (e) => {
-      const cell = (e.target as Element).closest<HTMLElement>(".cell");
-      if (!cell) return;
       e.preventDefault();
+      this.hooks.activate(this);
+      const cell = (e.target as Element).closest<HTMLElement>(".cell");
+      const common = [
+        { label: t.newFolderAction, run: () => this.hooks.createFolder(), disabled: !this.folder },
+        { label: t.clipboardPaste, run: () => this.hooks.paste(), disabled: !this.folder },
+      ];
+      if (!cell) {
+        showMenu(e.clientX, e.clientY, common);
+        return;
+      }
       const sub = cell.dataset.folder;
       if (sub) {
+        this.revealFolder(sub);
         showMenu(e.clientX, e.clientY, [
-          { label: t.menuOpen, run: () => this.hooks.navigate(sub) },
+          { label: t.openFolder, run: () => this.hooks.navigate(sub) },
+          { label: t.entryRename, run: () => this.hooks.rename(sub, true) },
           { label: t.menuReveal, run: () => this.hooks.reveal(sub) },
+          "separator", ...common,
         ]);
         return;
       }
+      this.folderSelection = null;
       const i = Number(cell.dataset.index);
       if (!this.selected.has(i)) {
         this.focus = i;
@@ -201,10 +244,13 @@ export class Gallery {
       showMenu(e.clientX, e.clientY, [
         { label: t.menuOpen, run: () => this.openAt(i) },
         { label: t.menuCompare, run: () => this.compareSelection(), disabled: n < 2 || n > MAX_COMPARE },
+        { label: t.entryRename, run: () => this.hooks.rename(paths[0], false), disabled: n !== 1 },
+        { label: t.clipboardCopy, run: () => this.hooks.clipboard(paths, false) },
+        { label: t.clipboardCut, run: () => this.hooks.clipboard(paths, true) },
         { label: t.menuTransfer, run: () => this.hooks.transfer(paths, null) },
         { label: t.menuExport, run: () => this.hooks.export(paths) },
         { label: t.menuReveal, run: () => this.hooks.reveal(this.entries[i].path) },
-        "separator",
+        "separator", ...common, "separator",
         { label: t.menuTrash, run: () => this.hooks.trash(paths), danger: true },
       ]);
     });
@@ -241,6 +287,74 @@ export class Gallery {
     this.grid.focus({ preventScroll: true });
   }
 
+  focusSearch(): void { this.search.focus(); this.search.select(); }
+
+  clearSearch(): void {
+    if (!this.search.value) return;
+    this.search.value = "";
+    this.applySearch();
+  }
+
+  private matching<T extends { name: string }>(items: T[]): T[] {
+    const query = this.search.value.trim().normalize("NFC").toLocaleLowerCase();
+    return query ? items.filter((e) => e.name.normalize("NFC").toLocaleLowerCase().includes(query)) : items;
+  }
+
+  private applySearch(): void {
+    const chosen = new Set(this.selectedPaths());
+    const keep = this.current?.path;
+    this.entries = this.sorted(this.matching(this.allEntries));
+    this.folders = this.sortedFolders(this.matching(this.allFolders));
+    this.folderSelection = null;
+    this.selected = new Set(this.entries.flatMap((e, i) => chosen.has(e.path) ? [i] : []));
+    this.focus = keep ? this.entries.findIndex((e) => samePath(e.path, keep)) : -1;
+    this.anchor = this.focus;
+    this.grid.scrollTop = 0;
+    this.render();
+    this.hooks.prefetch();
+  }
+
+  revealFolder(path: string): void {
+    this.clearSearch();
+    this.folderSelection = path;
+    this.selected.clear();
+    this.focus = this.anchor = -1;
+    this.paintSelection();
+    const slot = this.folders.findIndex((f) => samePath(f.path, path));
+    if (slot >= 0) {
+      this.grid.scrollTop = Math.floor(slot / this.metrics.cols) * this.metrics.rowH;
+      this.renderVisible();
+      this.paintSelection();
+    }
+    this.focusGrid();
+  }
+
+  /** Track renamed folders in both panes and Back history, including open descendants. */
+  relocate(changes: Done[]): void {
+    if (!changes.length) return;
+    const mapped = (path: string): string => {
+      const d = changes.find((d) => within(d.from, path));
+      return d ? d.to + path.normalize("NFC").slice(d.from.normalize("NFC").length) : path;
+    };
+    if (this.folder) this.folder = mapped(this.folder);
+    if (this.folderSelection) this.folderSelection = mapped(this.folderSelection);
+    for (const visit of this.history) {
+      visit.folder = mapped(visit.folder);
+      visit.selected = visit.selected.map(mapped);
+      if (visit.focus) visit.focus = mapped(visit.focus);
+      if (visit.anchor) visit.anchor = mapped(visit.anchor);
+    }
+    const remap = <T extends Sub>(e: T): T => {
+      const path = mapped(e.path);
+      return path === e.path ? e : { ...e, path, name: path.split(/[\\/]/).pop() || path };
+    };
+    this.allEntries = this.allEntries.map(remap);
+    this.allFolders = this.allFolders.map(remap);
+    this.entries = this.entries.map(remap);
+    this.folders = this.folders.map(remap);
+    this.render();
+  }
+
   dispose(): void {
     this.disposed = true;
     this.loadToken++;
@@ -261,6 +375,9 @@ export class Gallery {
 
   command(action: string): void {
     switch (action) {
+      case "new-folder":
+        if (this.folder) this.hooks.createFolder();
+        break;
       case "back": {
         const previous = this.history.at(-1);
         if (previous) this.hooks.navigate(previous.folder, true);
@@ -335,8 +452,9 @@ export class Gallery {
   showEmpty(): void {
     this.history.length = 0;
     this.folder = null;
-    this.entries = [];
-    this.folders = [];
+    this.allEntries = this.entries = [];
+    this.allFolders = this.folders = [];
+    this.search.value = "";
     this.render();
   }
 
@@ -353,15 +471,21 @@ export class Gallery {
         this.history.push({
           folder: this.folder,
           top: this.grid.scrollTop,
+          query: this.search.value,
           selected: this.selectedPaths(),
           focus: this.current?.path,
           anchor: this.entries[this.anchor]?.path,
         });
         if (this.history.length > 100) this.history.shift();
       }
+      const sameFolder = samePath(this.folder, dir);
       this.folder = dir;
-      this.folders = this.sortedFolders(contents.folders);
-      this.entries = this.sorted(contents.images);
+      this.folderSelection = null;
+      this.search.value = focusPath ? "" : restore?.query ?? (sameFolder ? this.search.value : "");
+      this.allFolders = contents.folders;
+      this.allEntries = contents.images;
+      this.folders = this.sortedFolders(this.matching(this.allFolders));
+      this.entries = this.sorted(this.matching(this.allEntries));
       const focus = focusPath ?? restore?.focus;
       const i = focus ? this.entries.findIndex((e) => samePath(e.path, focus)) : -1;
       const chosen = new Set(restore?.selected ?? []);
@@ -400,15 +524,17 @@ export class Gallery {
       return;
     }
     if (token !== this.loadToken || dir !== this.folder) return;
-    const next = this.sorted(contents.images);
-    const nextFolders = this.sortedFolders(contents.folders);
+    this.allEntries = contents.images;
+    this.allFolders = contents.folders;
+    const next = this.sorted(this.matching(this.allEntries));
+    const nextFolders = this.sortedFolders(this.matching(this.allFolders));
     const same = (a: Entry | undefined, b: Entry | undefined) =>
       !!a && !!b && a.path === b.path && a.modified === b.modified && a.size === b.size;
     // Image cells sit at slots after the folders, so a different folder list moves every one of them.
     const foldersSame =
-      nextFolders.length === this.folders.length && nextFolders.every((f, i) => f.path === this.folders[i].path);
+      nextFolders.length === this.folders.length && nextFolders.every((f, i) => f.path === this.folders[i].path && f.name === this.folders[i].name);
     const imagesSame = next.length === this.entries.length && next.every((e, i) => same(e, this.entries[i]));
-    if (!force && foldersSame && imagesSame) return;
+    if (!force && foldersSame && imagesSame) { this.paintSelection(); return; }
 
     const chosen = new Set([...this.selected].map((i) => this.entries[i]?.path));
     const focusPath = this.entries[this.focus]?.path;
@@ -497,9 +623,11 @@ export class Gallery {
   private updateEmpty(): void {
     const hasFolder = this.folder !== null;
     this.empty.hidden = hasFolder && this.slots > 0;
-    this.emptyText.textContent = hasFolder ? t.folderEmpty : t.emptyText;
+    this.emptyText.textContent = hasFolder ? (this.search.value.trim() ? t.searchEmpty : t.folderEmpty) : t.emptyText;
     this.empty.querySelector<HTMLElement>(".empty-actions")!.hidden = hasFolder;
     this.root.classList.toggle("no-folder", !hasFolder);
+    this.search.disabled = !hasFolder;
+    this.root.querySelector<HTMLButtonElement>(".clear-search")!.disabled = !this.search.value;
     if (this.folder) this.root.dataset.drop = this.folder;
     else delete this.root.dataset.drop;
     const previous = this.history.at(-1);
@@ -684,10 +812,17 @@ export class Gallery {
   private paintSelection(): void {
     const nf = this.folders.length;
     for (const [slot, cell] of this.cells) {
-      if (slot < nf) continue;
+      if (slot < nf) {
+        cell.classList.toggle("selected", samePath(this.folders[slot]?.path, this.folderSelection));
+        continue;
+      }
       cell.classList.toggle("selected", this.selected.has(slot - nf));
       cell.classList.toggle("focus", slot - nf === this.focus);
     }
+    const shown = this.entries.length + this.folders.length;
+    const total = this.allEntries.length + this.allFolders.length;
+    this.root.querySelector<HTMLElement>(".search-count")!.textContent = this.search.value.trim() ? t.searchCount(shown, total) : "";
+    this.root.querySelector<HTMLButtonElement>(".clear-search")!.disabled = !this.search.value;
     this.count.textContent = this.folder ? t.count(this.entries.length, this.selected.size) : "";
     const n = this.selected.size;
     this.root.querySelector(".compare-button")!.classList.toggle("ready", n >= 2 && n <= MAX_COMPARE);
@@ -700,11 +835,13 @@ export class Gallery {
 
   private range(a: number, b: number): Set<number> {
     const set = new Set<number>();
+    if (a < 0 || b < 0) return set;
     for (let i = Math.min(a, b); i <= Math.max(a, b); i++) set.add(i);
     return set;
   }
 
   private clickCell(i: number, e: MouseEvent): void {
+    this.folderSelection = null;
     const toggle = e.ctrlKey || e.metaKey;
     if (e.shiftKey && this.anchor >= 0) {
       const base = toggle ? new Set(this.selected) : new Set<number>();
@@ -757,6 +894,7 @@ export class Gallery {
   }
 
   handleKey(e: KeyboardEvent): boolean {
+    if (e.isComposing) return false;
     if (e.target instanceof HTMLButtonElement && ["Space", "Enter", "NumpadEnter"].includes(e.code)) return false;
     const mod = e.ctrlKey || e.metaKey;
     if ((e.altKey && !mod && e.code === "ArrowLeft") || (e.metaKey && !e.altKey && e.code === "BracketLeft")) {
@@ -769,6 +907,27 @@ export class Gallery {
       this.command("trash");
       return true;
     }
+    if (mod && e.shiftKey && e.code === "KeyN") {
+      e.preventDefault();
+      this.command("new-folder");
+      return true;
+    }
+    if (mod && e.code === "KeyF") {
+      e.preventDefault(); this.focusSearch(); return true;
+    }
+    if (mod && ["KeyC", "KeyX", "KeyV"].includes(e.code)) {
+      e.preventDefault();
+      if (e.code === "KeyV") { if (this.folder) this.hooks.paste(e.altKey); }
+      else this.hooks.clipboard(this.selectedPaths(), e.code === "KeyX");
+      return true;
+    }
+    if (e.code === "F2") {
+      e.preventDefault();
+      if (this.folderSelection) this.hooks.rename(this.folderSelection, true);
+      else if (this.selected.size === 1) this.hooks.rename(this.selectedPaths()[0], false);
+      else this.hooks.toast(t.renameNeed);
+      return true;
+    }
     if (mod && e.code === "KeyE") {
       e.preventDefault();
       this.hooks.export(this.selectedPaths());
@@ -776,6 +935,7 @@ export class Gallery {
     }
     if (mod && e.code === "KeyA") {
       e.preventDefault();
+      this.folderSelection = null;
       this.select(this.range(0, this.entries.length - 1));
       return true;
     }
@@ -812,6 +972,9 @@ export class Gallery {
       this.command("refresh");
       return true;
     }
+    if (e.code === "Escape" && this.search.value) {
+      e.preventDefault(); this.clearSearch(); return true;
+    }
     if (e.code === "Escape" && this.selected.size) {
       this.select(new Set());
       return true;
@@ -839,6 +1002,7 @@ export class Gallery {
     e.preventDefault();
     const from = this.focus < 0 ? (delta > 0 ? -1 : last + 1) : this.focus;
     const to = Math.min(last, Math.max(0, from + delta));
+    this.folderSelection = null;
     this.focus = to;
     if (e.shiftKey && this.anchor >= 0) this.select(this.range(this.anchor, to));
     else {
