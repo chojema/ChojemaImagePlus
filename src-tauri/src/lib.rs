@@ -5,6 +5,7 @@ mod folders;
 #[cfg(target_os = "macos")]
 mod imageio;
 mod library;
+mod photo_info;
 mod protocol;
 mod settings;
 mod thumbs;
@@ -104,6 +105,13 @@ async fn browse(dir: String, library: tauri::State<'_, Library>) -> Result<Conte
 async fn slideshow_list(dir: String, recursive: bool) -> Result<Vec<files::Entry>, String> {
     const LIMIT: usize = 100_000;
     tauri::async_runtime::spawn_blocking(move || files::scan_tree(Path::new(&dir), recursive, LIMIT))
+        .await
+        .map_err(|_| "failed".to_string())?
+}
+
+#[tauri::command]
+async fn photo_info(path: String) -> Result<photo_info::PhotoInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || photo_info::read(Path::new(&path)))
         .await
         .map_err(|_| "failed".to_string())?
 }
@@ -403,6 +411,7 @@ pub fn run() {
             take_launch_paths,
             open_paths,
             image_extensions,
+            photo_info,
             library_get,
             favorite_toggle,
             favorite_remove,

@@ -5,7 +5,8 @@ import { errorText, t } from "./i18n";
 import { ask } from "./modal";
 import { saveSettings, settings } from "./settings";
 
-type Mode = "move" | "copy";
+export type TransferMode = "move" | "copy";
+type Mode = TransferMode;
 type Resolution = "skip" | "overwrite" | "rename";
 
 interface PlannedFile {
@@ -23,7 +24,7 @@ interface Plan {
   copy_only: boolean;
 }
 
-interface Done {
+export interface Done {
   from: string;
   to: string;
 }
@@ -58,7 +59,7 @@ export class Transfer {
   private readonly label = $<HTMLElement>("progress-label");
   private readonly fill = $<HTMLElement>("progress-fill");
 
-  constructor(private readonly refresh: () => void) {
+  constructor(private readonly refresh: (relocated?: Done[]) => void) {
     $("progress-cancel").textContent = t.cancel;
     $("progress-cancel").addEventListener("click", () => void invoke("transfer_cancel"));
     void listen<Progress>("transfer-progress", (e) => {
@@ -68,8 +69,17 @@ export class Transfer {
     });
   }
 
-  async start(sources: string[], dest: string): Promise<void> {
+  async start(sources: string[], dest: string, requestedMode?: Mode): Promise<void> {
     if (this.busy || !sources.length) return;
+    this.busy = true;
+    try {
+      await this.perform(sources, dest, requestedMode);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async perform(sources: string[], dest: string, requestedMode?: Mode): Promise<void> {
     let plan: Plan;
     try {
       plan = await invoke<Plan>("transfer_plan", { sources, dest, includePairs: true });
@@ -81,13 +91,22 @@ export class Transfer {
       showToast(t.sameFolder);
       return;
     }
+    if (requestedMode === "move" && plan.copy_only) {
+      showToast(t.copyOnly);
+      return;
+    }
 
     const images = plan.files.filter((f) => !f.pair).length;
     const answer = await ask({
       title: t.transferTitle(images, folderName(dest)),
       message: plan.copy_only ? `${dest}\n\n${t.copyOnly}` : dest,
       checkbox: plan.pairs ? { label: t.includePairs(plan.pairs), checked: settings.includePairs } : undefined,
-      choices: plan.copy_only
+      choices: requestedMode
+        ? [
+            { id: requestedMode, label: requestedMode === "move" ? t.move : t.copy, primary: true },
+            { id: "cancel", label: t.cancel },
+          ]
+        : plan.copy_only
         ? [
             { id: "copy", label: t.copy, primary: true },
             { id: "cancel", label: t.cancel },
@@ -140,7 +159,6 @@ export class Transfer {
       for (const f of group) jobs.push({ src: f.src, group: f.group, resolution });
     }
 
-    this.busy = true;
     const timer = window.setTimeout(() => (this.panel.hidden = false), 300);
     let outcome: Outcome;
     try {
@@ -151,11 +169,10 @@ export class Transfer {
     } finally {
       clearTimeout(timer);
       this.panel.hidden = true;
-      this.busy = false;
     }
 
     if (outcome.done.length) this.last = { mode, items: outcome.done };
-    this.refresh();
+    this.refresh(mode === "move" ? outcome.done : undefined);
     const parts = [mode === "move" ? t.moved(outcome.done.length) : t.copied(outcome.done.length)];
     if (outcome.skipped) parts.push(t.skipped(outcome.skipped));
     if (outcome.overwritten) parts.push(t.overwrittenToTrash(outcome.overwritten));
@@ -208,7 +225,7 @@ export class Transfer {
     this.busy = true;
     try {
       const outcome = await invoke<Outcome>("transfer_undo", { mode: last.mode, items: last.items });
-      this.refresh();
+      this.refresh(last.mode === "move" ? outcome.done : undefined);
       showToast(t.undone(outcome.done.length));
       if (outcome.failed.length) await this.reportFailures(outcome.failed);
     } finally {

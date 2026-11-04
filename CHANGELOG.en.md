@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0
+
+- Photo details panel in the image view: file details, capture time, camera, lens, exposure, ISO and other main EXIF fields, plus GPS coordinates and altitude stored in the file (toggle with the info button or I)
+- Slideshow controls: move the mouse or press Tab to show Previous, Next, Pause, Go to image folder, Full screen and Finish; they hide after a moment
+- Back to the previous folder (Alt + ←, also ⌘ + [ on macOS): returns to a visited folder and restores selection and scroll position; each pane keeps its own history
+- Separate Move and Copy icons in side-by-side compare and dual pane, and Ctrl (⌘) + Z undo in compare
+- Thumbnails now load for visible cells while you scroll, and thumbnails that fail temporarily are retried automatically
+
 ## 0.14.0
 
 - Subfolders in the thumbnail list: folder icons come before the images, and a click opens the folder (right-click: Open, show in Explorer/Finder)

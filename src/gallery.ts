@@ -4,13 +4,15 @@ import { errorText, t } from "./i18n";
 import { MAX_COMPARE } from "./compare";
 import { showMenu } from "./menu";
 import { saveSettings, settings, SortKey } from "./settings";
+import { ThumbnailLoader } from "./thumbnails";
+import type { TransferMode } from "./transfer";
 
 interface Hooks {
-  navigate: (path: string) => void;
+  navigate: (path: string, back?: boolean) => void;
   open: (entries: Entry[], index: number) => void;
   compare: (entries: Entry[]) => void;
   /** `dest` null asks for the destination folder. */
-  transfer: (paths: string[], dest: string | null) => void;
+  transfer: (paths: string[], dest: string | null, mode?: TransferMode) => void;
   trash: (paths: string[]) => void;
   slideshow: () => void;
   export: (paths: string[]) => void;
@@ -41,6 +43,14 @@ interface Contents {
   images: Entry[];
 }
 
+interface FolderVisit {
+  folder: string;
+  top: number;
+  selected: string[];
+  focus?: string;
+  anchor?: string;
+}
+
 const FOLDER_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>';
 
@@ -59,10 +69,11 @@ export class Gallery {
   private readonly cells = new Map<number, HTMLElement>();
   private metrics = { cols: 1, cellW: 0, cellH: 0, rowH: 0, pad: 10, gap: 6 };
   private frame = 0;
-  /** Cells made while scrolling fast wait here; their thumbnails are requested once scrolling settles. */
-  private readonly unloaded = new Map<HTMLImageElement, Entry>();
-  private lastScroll = 0;
-  private settleTimer = 0;
+  private readonly thumbnails = new ThumbnailLoader((entry, attempt) => this.thumbSrc(entry, attempt));
+  private readonly resizeObserver = new ResizeObserver(() => this.relayout());
+  private disposed = false;
+  private retrySequence = 0;
+  private readonly history: FolderVisit[] = [];
 
   readonly root: HTMLElement;
   private readonly grid: HTMLElement;
@@ -112,9 +123,12 @@ export class Gallery {
     this.size.addEventListener("change", () => saveSettings({ thumbSize: Number(this.size.value) }));
 
     const titles: Record<string, string> = {
+      back: t.folderBack,
       up: t.up,
       "sort-dir": t.sortDir,
       transfer: t.transfer,
+      move: t.moveToOtherPane,
+      copy: t.copyToOtherPane,
       trash: t.trash,
       slideshow: t.slideshow,
       compare: t.compare,
@@ -142,12 +156,11 @@ export class Gallery {
     this.grid.addEventListener(
       "scroll",
       () => {
-        this.lastScroll = performance.now();
         this.schedule();
       },
       { passive: true },
     );
-    new ResizeObserver(() => this.relayout()).observe(this.grid);
+    this.resizeObserver.observe(this.grid);
     this.bindDrag();
     this.grid.addEventListener("click", (e) => {
       if (this.suppressClick) {
@@ -228,6 +241,15 @@ export class Gallery {
     this.grid.focus({ preventScroll: true });
   }
 
+  dispose(): void {
+    this.disposed = true;
+    this.loadToken++;
+    this.resizeObserver.disconnect();
+    cancelAnimationFrame(this.frame);
+    this.thumbnails.clear();
+    this.root.remove();
+  }
+
   private applySize(): void {
     this.grid.style.setProperty("--thumb", `${this.size.value}px`);
     this.relayout();
@@ -239,6 +261,11 @@ export class Gallery {
 
   command(action: string): void {
     switch (action) {
+      case "back": {
+        const previous = this.history.at(-1);
+        if (previous) this.hooks.navigate(previous.folder, true);
+        break;
+      }
       case "up": {
         const parent = this.folder && parentOf(this.folder);
         if (parent) this.hooks.navigate(parent);
@@ -262,10 +289,12 @@ export class Gallery {
         if (paths.length) this.hooks.trash(paths);
         break;
       }
-      case "transfer": {
+      case "transfer":
+      case "move":
+      case "copy": {
         const paths = this.selectedPaths();
         if (!paths.length) this.hooks.toast(t.transferNeed);
-        else this.hooks.transfer(paths, null);
+        else this.hooks.transfer(paths, null, action === "transfer" ? undefined : action);
         break;
       }
       case "refresh":
@@ -304,6 +333,7 @@ export class Gallery {
   }
 
   showEmpty(): void {
+    this.history.length = 0;
     this.folder = null;
     this.entries = [];
     this.folders = [];
@@ -311,21 +341,41 @@ export class Gallery {
   }
 
   /** Lists `dir`; `focusPath` keeps or moves the selection to that file. */
-  async load(dir: string, focusPath?: string): Promise<boolean> {
+  async load(dir: string, focusPath?: string, back = false): Promise<boolean> {
+    const restore = back ? this.history.at(-1) : undefined;
+    if (back && (!restore || !samePath(restore.folder, dir))) return false;
     const token = ++this.loadToken;
     try {
       const contents = await invoke<Contents>("browse", { dir });
       if (token !== this.loadToken) return false;
+      if (restore) this.history.pop();
+      else if (this.folder && !samePath(this.folder, dir)) {
+        this.history.push({
+          folder: this.folder,
+          top: this.grid.scrollTop,
+          selected: this.selectedPaths(),
+          focus: this.current?.path,
+          anchor: this.entries[this.anchor]?.path,
+        });
+        if (this.history.length > 100) this.history.shift();
+      }
       this.folder = dir;
       this.folders = this.sortedFolders(contents.folders);
       this.entries = this.sorted(contents.images);
-      const i = focusPath ? this.entries.findIndex((e) => samePath(e.path, focusPath)) : -1;
+      const focus = focusPath ?? restore?.focus;
+      const i = focus ? this.entries.findIndex((e) => samePath(e.path, focus)) : -1;
+      const chosen = new Set(restore?.selected ?? []);
       this.focus = i;
-      this.anchor = i;
-      this.selected = i >= 0 ? new Set([i]) : new Set();
+      this.anchor = restore?.anchor ? this.entries.findIndex((e) => samePath(e.path, restore.anchor)) : i;
+      this.selected = restore
+        ? new Set(this.entries.flatMap((e, j) => chosen.has(e.path) ? [j] : []))
+        : i >= 0 ? new Set([i]) : new Set();
       this.grid.scrollTop = 0;
       this.render();
-      if (i >= 0) this.scrollTo(i);
+      if (restore) {
+        this.grid.scrollTop = restore.top;
+        this.renderVisible();
+      } else if (i >= 0) this.scrollTo(i);
       this.hooks.prefetch();
       return true;
     } catch (err) {
@@ -376,8 +426,6 @@ export class Gallery {
       if (keep) continue;
       cell.remove();
       this.cells.delete(slot);
-      const img = cell.querySelector("img");
-      if (img) this.unloaded.delete(img);
     }
     this.updateEmpty();
     this.relayout();
@@ -431,8 +479,9 @@ export class Gallery {
     if (this.focus >= 0) this.scrollTo(this.focus);
   }
 
-  private thumbSrc(entry: Entry): string {
-    return `${convertFileSrc(entry.path, "thumb")}?v=${entry.modified}`;
+  private thumbSrc(entry: Entry, attempt = 0): string {
+    const retry = attempt ? `&retry=${Date.now()}-${++this.retrySequence}` : "";
+    return `${convertFileSrc(entry.path, "thumb")}?v=${entry.modified}&s=${entry.size}${retry}`;
   }
 
   private render(): void {
@@ -440,7 +489,7 @@ export class Gallery {
     this.updateEmpty();
     for (const cell of this.cells.values()) cell.remove();
     this.cells.clear();
-    this.unloaded.clear();
+    this.thumbnails.clear();
     this.relayout();
     this.paintSelection();
   }
@@ -453,22 +502,28 @@ export class Gallery {
     this.root.classList.toggle("no-folder", !hasFolder);
     if (this.folder) this.root.dataset.drop = this.folder;
     else delete this.root.dataset.drop;
+    const previous = this.history.at(-1);
+    const back = this.root.querySelector<HTMLButtonElement>('[data-browse="back"]')!;
+    back.disabled = !previous;
+    back.title = previous ? `${t.folderBack}\n${previous.folder}` : t.folderBack;
+    this.root.querySelector<HTMLButtonElement>('[data-browse="up"]')!.disabled = !this.folder || !parentOf(this.folder);
   }
 
-  /** Requests thumbnails for cells still on the page; while the list is moving, waits until it stops. */
+  /** Start visible thumbnails immediately, including during continuous scrolling. */
   private loadThumbs(): void {
-    if (!this.unloaded.size) return;
-    const SETTLE = 120;
-    const wait = this.lastScroll + SETTLE - performance.now();
-    if (wait > 0) {
-      clearTimeout(this.settleTimer);
-      this.settleTimer = window.setTimeout(() => this.loadThumbs(), wait);
-      return;
+    const m = this.metrics;
+    const top = this.grid.scrollTop;
+    const bottom = top + this.grid.clientHeight;
+    const items = [];
+    for (const [slot, cell] of this.cells) {
+      const img = cell.querySelector("img");
+      if (!img) continue;
+      const y = m.pad + Math.floor(slot / m.cols) * m.rowH;
+      const visible = y < bottom && y + m.cellH > top;
+      const distance = Math.max(top - y - m.cellH, y - bottom, 0);
+      items.push({ img, entry: this.entries[slot - this.folders.length], priority: visible ? y - top : 1e9 + distance });
     }
-    for (const [img, entry] of this.unloaded) {
-      if (img.isConnected) img.src = this.thumbSrc(entry);
-    }
-    this.unloaded.clear();
+    this.thumbnails.set(items);
   }
 
   // Virtual scrolling: only the rows in view (plus a margin) exist as elements, so a folder
@@ -520,11 +575,16 @@ export class Gallery {
   }
 
   private renderVisible(): void {
+    if (this.disposed) return;
+    if (!this.grid.clientWidth || !this.grid.clientHeight) {
+      this.thumbnails.clear();
+      return;
+    }
     const m = this.metrics;
     if (!this.slots || !m.rowH) {
       for (const cell of this.cells.values()) cell.remove();
       this.cells.clear();
-      this.unloaded.clear();
+      this.thumbnails.clear();
       return;
     }
     const overscan = 2;
@@ -537,8 +597,6 @@ export class Gallery {
       if (i < first || i > last) {
         cell.remove();
         this.cells.delete(i);
-        const img = cell.querySelector("img");
-        if (img) this.unloaded.delete(img);
       }
     }
     const fragment = document.createDocumentFragment();
@@ -570,8 +628,6 @@ export class Gallery {
     img.decoding = "async";
     img.draggable = false;
     img.alt = "";
-    this.unloaded.set(img, entry);
-    img.addEventListener("error", () => frame.classList.add("broken"), { once: true });
     frame.append(img);
     const name = document.createElement("span");
     name.className = "name";
@@ -701,7 +757,13 @@ export class Gallery {
   }
 
   handleKey(e: KeyboardEvent): boolean {
+    if (e.target instanceof HTMLButtonElement && ["Space", "Enter", "NumpadEnter"].includes(e.code)) return false;
     const mod = e.ctrlKey || e.metaKey;
+    if ((e.altKey && !mod && e.code === "ArrowLeft") || (e.metaKey && !e.altKey && e.code === "BracketLeft")) {
+      e.preventDefault();
+      this.command("back");
+      return true;
+    }
     if (e.code === "Delete" || (e.metaKey && e.code === "Backspace")) {
       e.preventDefault();
       this.command("trash");

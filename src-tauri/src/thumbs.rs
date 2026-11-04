@@ -2,7 +2,7 @@ use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::PngEncoder;
 use image::{DynamicImage, ImageDecoder, ImageEncoder, ImageReader};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -31,6 +31,8 @@ struct State {
     /// On-screen requests; the newest (last) is served first, since scrolling makes older
     /// requests stale.
     jobs: Vec<Job>,
+    /// Includes background renders so a visible request can join work already in progress.
+    running: HashMap<PathBuf, Vec<Reply>>,
     /// Background work: the rest of the folder, in order.
     prefetch: VecDeque<PathBuf>,
     background: usize,
@@ -53,7 +55,7 @@ pub struct Thumbs {
 }
 
 enum Task {
-    Job(Job),
+    Job(PathBuf),
     Prefetch(PathBuf),
 }
 
@@ -82,6 +84,10 @@ impl Thumbs {
         }
         let dropped = {
             let mut s = self.inner.state.lock().unwrap();
+            if let Some(replies) = s.running.get_mut(&path) {
+                replies.push(reply);
+                return;
+            }
             let mut job = match s.jobs.iter().position(|j| j.path == path) {
                 Some(i) => s.jobs.remove(i),
                 None => Job { path, replies: Vec::new() },
@@ -116,6 +122,15 @@ impl Thumbs {
 
     pub fn clear(&self) {
         let _ = fs::remove_dir_all(&self.inner.dir);
+    }
+
+    /// A browser decode failure may be a damaged cache entry. A retry must render it afresh.
+    pub fn invalidate(&self, path: &Path) {
+        if let Some(base) = self.inner.cache_path(path) {
+            for ext in ["jpg", "png"] {
+                let _ = fs::remove_file(base.with_extension(ext));
+            }
+        }
     }
 
     /// Deletes the oldest cached files once the cache grows past its limit.
@@ -162,10 +177,15 @@ impl Inner {
                         return;
                     }
                     if let Some(job) = s.jobs.pop() {
-                        break Task::Job(job);
+                        s.running.insert(job.path.clone(), job.replies);
+                        break Task::Job(job.path);
                     }
                     if s.background < self.background_cap {
                         if let Some(path) = s.prefetch.pop_front() {
+                            if s.running.contains_key(&path) {
+                                continue;
+                            }
+                            s.running.insert(path.clone(), Vec::new());
                             s.background += 1;
                             break Task::Prefetch(path);
                         }
@@ -174,25 +194,40 @@ impl Inner {
                 }
             };
             match task {
-                Task::Job(job) => {
-                    let result = self.load(&job.path);
-                    let mut replies = job.replies.into_iter();
-                    let last = replies.next_back();
-                    for reply in replies {
-                        reply(result.clone());
-                    }
-                    if let Some(reply) = last {
-                        reply(result);
-                    }
+                Task::Job(path) => {
+                    let result = self.load(&path);
+                    self.finish(&path, result);
                 }
                 Task::Prefetch(path) => {
-                    if !self.is_cached(&path) {
-                        let _ = self.load(&path);
+                    // A warm folder needs only existence checks. Do not read every cached image
+                    // again unless an on-screen request joined this background task.
+                    if self.is_cached(&path) {
+                        let mut s = self.state.lock().unwrap();
+                        if s.running.get(&path).is_some_and(Vec::is_empty) {
+                            s.running.remove(&path);
+                            s.background -= 1;
+                            drop(s);
+                            self.ready.notify_one();
+                            continue;
+                        }
                     }
+                    let result = self.load(&path);
+                    self.finish(&path, result);
                     self.state.lock().unwrap().background -= 1;
                     self.ready.notify_one();
                 }
             }
+        }
+    }
+
+    fn finish(&self, path: &Path, result: Option<Thumb>) {
+        let mut replies = self.state.lock().unwrap().running.remove(path).unwrap_or_default().into_iter();
+        let last = replies.next_back();
+        for reply in replies {
+            reply(result.clone());
+        }
+        if let Some(reply) = last {
+            reply(result);
         }
     }
 
@@ -204,7 +239,6 @@ impl Inner {
         Some(self.dir.join(format!("{:016x}", h.finish())))
     }
 
-    /// Whether a thumbnail exists, without reading it (background work only needs to know).
     fn is_cached(&self, path: &Path) -> bool {
         is_svg(path)
             || self
@@ -308,6 +342,39 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
 
+    #[test]
+    fn visible_requests_join_a_running_background_render() {
+        let base = scratch("join-running");
+        let path = base.join("in-progress.png");
+        // No workers: keep a background render in progress until the test completes it.
+        let thumbs = Thumbs {
+            inner: std::sync::Arc::new(super::Inner {
+                dir: base.join("cache"),
+                state: std::sync::Mutex::new(super::State::default()),
+                ready: std::sync::Condvar::new(),
+                background_cap: 1,
+            }),
+        };
+        thumbs.inner.state.lock().unwrap().running.insert(path.clone(), Vec::new());
+        let (tx, rx) = std::sync::mpsc::channel();
+        for _ in 0..2 {
+            let tx = tx.clone();
+            thumbs.request(path.clone(), Box::new(move |result| { let _ = tx.send(result); }));
+        }
+        {
+            let state = thumbs.inner.state.lock().unwrap();
+            assert!(state.jobs.is_empty(), "must not render the same file again");
+            assert_eq!(state.running[&path].len(), 2);
+        }
+        thumbs.inner.finish(&path, Some((vec![1, 2, 3], "image/jpeg")));
+        for _ in 0..2 {
+            assert_eq!(rx.recv_timeout(Duration::from_secs(1)).unwrap(), Some((vec![1, 2, 3], "image/jpeg")));
+        }
+        assert!(thumbs.inner.state.lock().unwrap().running.is_empty());
+        drop(thumbs);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
     fn scratch(name: &str) -> PathBuf {
         let base = std::env::temp_dir().join(format!("image-plus-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
@@ -378,6 +445,23 @@ mod tests {
         assert_eq!(std::fs::read_dir(base.join("cache")).unwrap().count(), 1);
         let (again, _) = thumbs.get(&src).unwrap();
         assert_eq!(again, bytes);
+        drop(thumbs);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn retry_replaces_a_damaged_cached_thumbnail() {
+        let base = scratch("damaged-cache");
+        let files = pngs(&base, 1, 80, 60);
+        let thumbs = Thumbs::new(base.join("cache"));
+        thumbs.get(&files[0]).expect("first render");
+        let cache = std::fs::read_dir(base.join("cache")).unwrap().next().unwrap().unwrap().path();
+        std::fs::write(cache, b"incomplete thumbnail").unwrap();
+        thumbs.invalidate(&files[0]);
+        let (bytes, _) = thumbs.get(&files[0]).expect("regenerated thumbnail");
+        let image = image::load_from_memory(&bytes).expect("valid thumbnail after retry");
+        assert_eq!((image.width(), image.height()), (80, 60));
+        assert!(files[0].is_file());
         drop(thumbs);
         let _ = std::fs::remove_dir_all(base);
     }

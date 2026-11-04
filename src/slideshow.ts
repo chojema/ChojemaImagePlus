@@ -124,10 +124,54 @@ export class Slideshow {
   private enteredFullscreen = false;
   private token = 0;
   private preload = new Image();
+  private displayed: Entry | undefined;
+  private readonly controls = $("ss-controls");
+  private controlsTimer = 0;
+  private keyboardControls = false;
+  private fullscreenWork: Promise<void> = Promise.resolve();
 
-  constructor(private readonly onExit: (last: Entry | undefined) => void) {
-    this.root.addEventListener("click", () => this.togglePause());
-    new ResizeObserver(() => this.layout(this.slides[this.front])).observe(this.root);
+  constructor(private readonly onExit: (last: Entry | undefined, openFolder: boolean) => void) {
+    this.root.setAttribute("aria-label", t.ssTitle);
+    this.controls.setAttribute("aria-label", t.ssControls);
+    this.root.addEventListener("click", (e) => {
+      if (!this.controls.contains(e.target as Node)) this.togglePause();
+    });
+    this.root.addEventListener("pointermove", () => this.showControls());
+    // Older web views allow focus to scroll an overflow-hidden container after resizing.
+    this.root.addEventListener("scroll", () => {
+      this.root.scrollLeft = 0;
+      this.root.scrollTop = 0;
+    });
+    this.root.addEventListener("pointerdown", (e) => {
+      this.keyboardControls = false;
+      if (!this.controls.contains(e.target as Node)) this.root.focus({ preventScroll: true });
+      this.showControls();
+    });
+    this.controls.addEventListener("pointerenter", () => this.showControls());
+    this.controls.addEventListener("pointerleave", () => this.showControls());
+    this.controls.addEventListener("focusin", () => this.showControls());
+    this.controls.addEventListener("focusout", () => queueMicrotask(() => this.showControls()));
+    this.controls.addEventListener("click", (e) => {
+      const action = (e.target as Element).closest<HTMLButtonElement>("[data-ss]")?.dataset.ss;
+      if (!action || !this.running) return;
+      e.stopPropagation();
+      this.showControls();
+      switch (action) {
+        case "prev": this.prev(); break;
+        case "next": this.next(); break;
+        case "pause": this.togglePause(); break;
+        case "folder": this.stop(true); break;
+        case "fullscreen": void this.fullscreen(); break;
+        case "stop": this.stop(); break;
+      }
+    });
+    this.updateControls();
+    const resize = new ResizeObserver(() => {
+      this.layout(this.slides[this.front]);
+      this.root.style.setProperty("--ss-controls-height", `${this.controls.offsetHeight}px`);
+    });
+    resize.observe(this.root);
+    resize.observe(this.controls);
   }
 
   get isRunning(): boolean {
@@ -136,6 +180,7 @@ export class Slideshow {
 
   /** Lists the images and starts; `sorter` applies the list's current sort order. */
   async start(options: SlideshowOptions, sorter: (list: Entry[]) => Entry[]): Promise<boolean> {
+    this.token++;
     showToast(t.ssLoading);
     let list: Entry[];
     try {
@@ -152,8 +197,15 @@ export class Slideshow {
     this.order = options.order;
     this.entries = options.order === "random" ? shuffle(list) : options.recursive ? list : sorter(list);
     this.index = -1;
+    this.displayed = undefined;
     this.paused = false;
+    this.keyboardControls = false;
     this.running = true;
+    this.root.classList.remove("paused");
+    $("ss-position").textContent = "";
+    this.root.focus({ preventScroll: true });
+    this.updateControls();
+    this.showControls();
     document.getElementById("toast")!.hidden = true;
     for (const s of this.slides) {
       s.classList.remove("visible");
@@ -166,28 +218,47 @@ export class Slideshow {
       this.tickClock();
       this.clockTimer = window.setInterval(() => this.tickClock(), 1000);
     }
-    this.enteredFullscreen = false;
-    if (settings.ssFullscreen && !isFullscreen()) {
-      this.enteredFullscreen = true;
-      await toggleFullscreen(true);
+    this.enteredFullscreen = !isFullscreen();
+    if (settings.ssFullscreen && this.enteredFullscreen) {
+      await this.changeFullscreen(true);
     }
+    this.updateControls();
     this.next();
     return true;
   }
 
-  stop(): void {
+  stop(openFolder = false): void {
     if (!this.running) return;
     this.running = false;
     clearTimeout(this.timer);
     clearInterval(this.clockTimer);
-    this.token++;
-    for (const s of this.slides) s.removeAttribute("src");
-    if (this.enteredFullscreen && isFullscreen()) void toggleFullscreen(false);
-    this.onExit(this.entries[this.index]);
+    clearTimeout(this.controlsTimer);
+    this.root.classList.remove("controls-visible", "paused");
+    const stopped = ++this.token;
+    const last = this.displayed;
+    for (const s of this.slides) {
+      s.onload = null;
+      s.onerror = null;
+      s.removeAttribute("src");
+    }
+    this.preload.removeAttribute("src");
+    const finish = () => {
+      if (!this.running && this.token === stopped) this.onExit(last, openFolder);
+    };
+    if (this.enteredFullscreen) {
+      void this.changeFullscreen(false).then(finish, (err) => {
+        showToast(errorText(err));
+        finish();
+      });
+    } else finish();
   }
 
   handleKey(e: KeyboardEvent): boolean {
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    this.keyboardControls = true;
+    this.showControls();
+    // Native button activation must not also toggle playback through the global shortcut.
+    if (this.controls.contains(e.target as Node) && ["Space", "Enter", "NumpadEnter"].includes(e.code)) return false;
     switch (e.code) {
       case "Escape":
         this.stop();
@@ -207,7 +278,7 @@ export class Slideshow {
         this.prev();
         break;
       case "KeyF":
-        void toggleFullscreen();
+        void this.fullscreen();
         break;
       default:
         return false;
@@ -217,12 +288,64 @@ export class Slideshow {
   }
 
   private togglePause(): void {
+    if (!this.running) return;
     this.paused = !this.paused;
     const label = $("ss-paused");
     label.textContent = t.ssPaused;
     label.hidden = !this.paused;
+    this.root.classList.toggle("paused", this.paused);
+    this.updateControls();
+    this.showControls();
     if (this.paused) clearTimeout(this.timer);
     else this.schedule();
+  }
+
+  private updateControls(): void {
+    const labels: Record<string, string> = {
+      prev: t.prev,
+      next: t.next,
+      pause: this.paused ? t.ssResume : t.ssPause,
+      folder: t.ssImageFolder,
+      fullscreen: t.fullscreen,
+      stop: t.ssStop,
+    };
+    for (const button of this.controls.querySelectorAll<HTMLButtonElement>("[data-ss]")) {
+      const action = button.dataset.ss!;
+      const label = labels[action];
+      button.title = action === "pause" ? `${label} (Space)` : action === "stop" ? `${label} (Esc)` : label;
+      button.setAttribute("aria-label", label);
+      const text = button.querySelector("span");
+      if (text) text.textContent = label;
+      if (action === "folder") button.disabled = !this.displayed;
+      if (action === "prev" || action === "next") button.disabled = this.entries.length < 2;
+      if (action === "fullscreen") button.setAttribute("aria-pressed", String(isFullscreen()));
+    }
+  }
+
+  private showControls(): void {
+    if (!this.running) return;
+    clearTimeout(this.controlsTimer);
+    this.root.classList.add("controls-visible");
+    if (this.paused || this.controls.matches(":hover") || (this.keyboardControls && this.controls.contains(document.activeElement))) return;
+    this.controlsTimer = window.setTimeout(() => this.root.classList.remove("controls-visible"), 2600);
+  }
+
+  private async fullscreen(): Promise<void> {
+    try {
+      await this.changeFullscreen();
+      if (!this.running) return;
+      this.updateControls();
+      this.showControls();
+    } catch (err) {
+      showToast(errorText(err));
+    }
+  }
+
+  private changeFullscreen(force?: boolean): Promise<void> {
+    // Finishing must restore the window after any pending fullscreen request, even if its
+    // reply arrives after the slideshow has stopped.
+    this.fullscreenWork = this.fullscreenWork.catch(() => {}).then(() => toggleFullscreen(force));
+    return this.fullscreenWork;
   }
 
   private schedule(): void {
@@ -231,6 +354,7 @@ export class Slideshow {
   }
 
   private next(): void {
+    if (!this.running) return;
     let i = this.index + 1;
     if (i >= this.entries.length) {
       if (!settings.ssLoop) {
@@ -245,10 +369,12 @@ export class Slideshow {
   }
 
   private prev(): void {
+    if (!this.running) return;
     this.show(this.index <= 0 ? this.entries.length - 1 : this.index - 1);
   }
 
   private show(i: number, skipped = 0): void {
+    clearTimeout(this.timer);
     this.index = i;
     const entry = this.entries[i];
     const token = ++this.token;
@@ -259,6 +385,10 @@ export class Slideshow {
       back.classList.add("visible");
       this.slides[this.front].classList.remove("visible");
       this.front = 1 - this.front;
+      this.displayed = entry;
+      $("ss-position").textContent = `${i + 1} / ${this.entries.length}`;
+      $("ss-position").title = entry.path;
+      this.updateControls();
       this.caption(entry);
       const upcoming = this.entries[(i + 1) % this.entries.length];
       if (upcoming) this.preload.src = imageSrc(upcoming);

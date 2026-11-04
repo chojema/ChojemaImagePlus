@@ -1,5 +1,6 @@
-import { $, Entry, formatSize, isFullscreen, setWindowTitle, showToast, toggleFullscreen } from "./common";
-import { t } from "./i18n";
+import { $, Entry, formatSize, isFullscreen, samePath, setWindowTitle, showToast, toggleFullscreen } from "./common";
+import { errorText, t } from "./i18n";
+import type { Done, TransferMode } from "./transfer";
 import { View } from "./view";
 import { imageSrc } from "./viewer";
 
@@ -21,6 +22,7 @@ export class Compare {
   private active = 0;
   private sync = true;
   private stacked = false;
+  private transferring = false;
   private drag: { pane: Pane; id: number; x: number; y: number } | null = null;
 
   private readonly container = $<HTMLElement>("panes");
@@ -29,7 +31,7 @@ export class Compare {
   private readonly zoomLabel = $<HTMLButtonElement>("compare-zoom");
   readonly actions: Record<string, () => void>;
 
-  constructor(hooks: { back: () => void }) {
+  constructor(private readonly hooks: { back: () => void; transfer: (entry: Entry, mode: TransferMode) => Promise<void> }) {
     this.actions = {
       back: hooks.back,
       layout: () => this.toggleLayout(),
@@ -41,6 +43,8 @@ export class Compare {
       "rotate-left": () => this.rotateActive(-90),
       "rotate-right": () => this.rotateActive(90),
       "close-pane": () => this.closeActive(),
+      move: () => void this.transferActive("move"),
+      copy: () => void this.transferActive("copy"),
       fullscreen: () => void toggleFullscreen(),
       next: () => this.setActive((this.active + 1) % this.panes.length),
     };
@@ -55,6 +59,8 @@ export class Compare {
       "rotate-left": t.rotateLeft,
       "rotate-right": t.rotateRight,
       "close-pane": t.compareClose,
+      move: t.compareMove,
+      copy: t.compareCopy,
       fullscreen: t.fullscreen,
     };
     for (const button of this.bar.querySelectorAll<HTMLButtonElement>("[data-cmp]")) {
@@ -65,7 +71,7 @@ export class Compare {
     }
     new ResizeObserver(() => this.relayout()).observe(this.container);
     window.addEventListener("mousemove", (e) => {
-      this.bar.classList.toggle("peek", window.innerHeight - e.clientY < 90);
+      this.bar.classList.toggle("peek", window.innerHeight - e.clientY < Math.max(90, this.bar.offsetHeight + 12));
     });
   }
 
@@ -77,6 +83,7 @@ export class Compare {
     this.applyLayout();
     this.paint();
     this.updateTitle();
+    this.panes[0]?.root.focus({ preventScroll: true });
   }
 
   private updateTitle(): void {
@@ -84,7 +91,11 @@ export class Compare {
   }
 
   close(): void {
-    for (const p of this.panes) p.img.removeAttribute("src");
+    for (const p of this.panes) {
+      p.img.onload = null;
+      p.img.onerror = null;
+      p.img.removeAttribute("src");
+    }
     this.panes = [];
     this.container.replaceChildren();
   }
@@ -106,7 +117,8 @@ export class Compare {
       KeyV: "layout",
       KeyF: "fullscreen",
       F11: "fullscreen",
-      Tab: "next",
+      KeyM: "move",
+      KeyC: "copy",
       Delete: "close-pane",
       KeyX: "close-pane",
     };
@@ -121,9 +133,44 @@ export class Compare {
     return isFullscreen();
   }
 
+  /** Keep the comparison and its zoom state usable after moving a file or undoing a move. */
+  relocate(changes: Done[]): void {
+    let changed = false;
+    for (const pane of this.panes) {
+      const move = changes.find((item) => item.to && samePath(item.from, pane.entry.path));
+      if (!move) continue;
+      pane.entry = { ...pane.entry, path: move.to, name: move.to.split(/[\\/]/).pop() || pane.entry.name };
+      pane.root.querySelector<HTMLElement>(".name")!.textContent = pane.entry.name;
+      pane.root.title = pane.entry.path;
+      if (!pane.view.loaded) pane.img.src = imageSrc(pane.entry);
+      changed = true;
+    }
+    if (changed) {
+      this.paint();
+      this.updateTitle();
+    }
+  }
+
+  private async transferActive(mode: TransferMode): Promise<void> {
+    const pane = this.panes[this.active];
+    if (!pane || this.transferring) return;
+    this.transferring = true;
+    this.paint();
+    try {
+      await this.hooks.transfer(pane.entry, mode);
+    } catch (err) {
+      showToast(errorText(err));
+    } finally {
+      this.transferring = false;
+      this.paint();
+    }
+  }
+
   private createPane(entry: Entry): Pane {
     const root = document.createElement("div");
     root.className = "pane";
+    root.tabIndex = 0;
+    root.title = entry.path;
     const stage = document.createElement("div");
     stage.className = "pane-stage";
     const img = document.createElement("img");
@@ -154,6 +201,8 @@ export class Compare {
     };
     img.src = imageSrc(entry);
     this.bindPane(pane);
+    root.addEventListener("pointerdown", () => this.setActive(this.panes.indexOf(pane)), true);
+    root.addEventListener("focusin", () => this.setActive(this.panes.indexOf(pane)));
     return pane;
   }
 
@@ -303,5 +352,12 @@ export class Compare {
     }
     const closeButton = this.bar.querySelector<HTMLButtonElement>('[data-cmp="close-pane"]');
     if (closeButton) closeButton.disabled = this.panes.length <= 2;
+    for (const action of ["move", "copy"] as const) {
+      const button = this.bar.querySelector<HTMLButtonElement>(`[data-cmp="${action}"]`);
+      if (!button) continue;
+      button.disabled = !lead || this.transferring;
+      const label = action === "move" ? t.compareMove : t.compareCopy;
+      button.title = lead ? `${label}\n${lead.entry.name}` : label;
+    }
   }
 }

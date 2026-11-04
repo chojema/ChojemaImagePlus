@@ -46,6 +46,9 @@ pub fn thumbnail(request: &Request<Vec<u8>>, thumbs: &Thumbs, responder: UriSche
     if files::kind(&path).is_none() {
         return responder.respond(status(StatusCode::FORBIDDEN));
     }
+    if request.uri().query().is_some_and(|query| query.split('&').any(|part| part.starts_with("retry="))) {
+        thumbs.invalidate(&path);
+    }
     thumbs.request(
         path,
         Box::new(move |result| {
@@ -87,6 +90,7 @@ fn encode_png(pixels: &[u8], width: u32, height: u32, color: ExtendedColorType) 
 fn status(code: StatusCode) -> Response<Vec<u8>> {
     Response::builder()
         .status(code)
+        .header(header::CACHE_CONTROL, "no-store")
         .body(Vec::new())
         .expect("empty response")
 }
@@ -94,6 +98,12 @@ fn status(code: StatusCode) -> Response<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::decode;
+
+    #[test]
+    fn transient_errors_are_not_cached_by_the_webview() {
+        let response = super::status(tauri::http::StatusCode::NOT_FOUND);
+        assert_eq!(response.headers()[tauri::http::header::CACHE_CONTROL], "no-store");
+    }
 
     #[test]
     fn decodes_tiff_to_png() {

@@ -4,6 +4,7 @@ import { $, Entry, formatSize, isFullscreen, isWindows, setWindowTitle, showToas
 import { t } from "./i18n";
 import { showMenu } from "./menu";
 import { View } from "./view";
+import { PhotoDetails } from "./photo-info";
 
 const APP_NAME = "Chojema Image+";
 const ZOOM_STEP = 1.25;
@@ -31,6 +32,7 @@ const keymap: Record<string, string> = {
   KeyR: "rotate-right",
   KeyL: "rotate-left",
   KeyE: "edit",
+  KeyI: "details",
   KeyF: "fullscreen",
   F11: "fullscreen",
   Enter: "fullscreen",
@@ -55,6 +57,7 @@ export class Viewer {
   private readonly infoDetail = $<HTMLElement>("info-detail");
   private readonly zoomLabel = $<HTMLButtonElement>("zoom-label");
   private readonly view = new View(this.stage, this.img);
+  private readonly details = new PhotoDetails();
   private readonly appWindow = getCurrentWindow();
   private readonly preloaded = new Map<string, HTMLImageElement>();
   private loadToken = 0;
@@ -96,6 +99,7 @@ export class Viewer {
       back: hooks.back,
       favorite: hooks.favorite,
       folders: hooks.folders,
+      details: () => this.details.toggle(),
       trash: () => {
         if (this.current) hooks.trash(this.current.path);
       },
@@ -122,6 +126,7 @@ export class Viewer {
       back: t.back,
       favorite: t.favoriteToggle,
       folders: t.folders,
+      details: t.photoDetails,
     };
     for (const button of this.bar.querySelectorAll<HTMLButtonElement>("[data-action]")) {
       const action = button.dataset.action!;
@@ -138,6 +143,7 @@ export class Viewer {
         { label: t.menuReveal, run: () => hooks.reveal(entry.path) },
         { label: t.menuExport, run: () => hooks.export(entry.path) },
         { label: t.edTitle, run: () => this.actions.edit() },
+        { label: t.photoDetails, run: () => this.actions.details() },
         "separator",
         { label: t.menuTrash, run: () => hooks.trash(entry.path), danger: true },
       ]);
@@ -152,7 +158,7 @@ export class Viewer {
 
     // In full screen the bar slides in when the pointer nears the bottom edge.
     window.addEventListener("mousemove", (e) => {
-      this.bar.classList.toggle("peek", window.innerHeight - e.clientY < 90);
+      this.bar.classList.toggle("peek", window.innerHeight - e.clientY < Math.max(90, this.bar.offsetHeight + 12));
     });
     void this.appWindow.onResized(async () => {
       document.body.classList.toggle("fullscreen", await this.appWindow.isFullscreen());
@@ -204,9 +210,12 @@ export class Viewer {
     this.img.removeAttribute("src");
     this.img.classList.remove("visible");
     this.preloaded.clear();
+    this.details.clear();
   }
 
   handleKey(e: KeyboardEvent): boolean {
+    if (e.target instanceof HTMLButtonElement && ["Space", "Enter", "NumpadEnter"].includes(e.code)) return false;
+    if ((e.target as Element | null)?.closest?.("#photo-details") && ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(e.code)) return false;
     if (e.code === "Delete" || (e.metaKey && e.code === "Backspace")) {
       e.preventDefault();
       this.actions.trash();
@@ -284,10 +293,13 @@ export class Viewer {
     this.showMessage(null);
     this.updateInfo();
 
+    this.details.show(entry);
+
     this.img.onload = () => {
       if (token !== this.loadToken) return;
       v.reset(this.img.naturalWidth, this.img.naturalHeight);
       this.img.classList.add("visible");
+      this.details.dimensions(this.img.naturalWidth, this.img.naturalHeight);
       this.updateInfo();
     };
     this.img.onerror = () => {

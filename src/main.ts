@@ -12,7 +12,7 @@ import { errorText, Language, t } from "./i18n";
 import { Library } from "./library";
 import { menuOpen } from "./menu";
 import { modalOpen } from "./modal";
-import { Transfer } from "./transfer";
+import { Transfer, type TransferMode } from "./transfer";
 import { loadSettings, saveSettings, settings, SettingsDialog, syncLanguage } from "./settings";
 import { Slideshow, SlideshowDialog } from "./slideshow";
 import { FolderTree } from "./tree";
@@ -40,10 +40,10 @@ const active = (): Gallery => panes[activeIndex];
 
 function makePane(): Gallery {
   const pane: Gallery = new Gallery($("galleries"), {
-    navigate: (path) => void navigate(path, undefined, pane),
+    navigate: (path, back) => void navigate(path, undefined, pane, back),
     open: (entries, index) => openViewer(entries, index, pane.folder),
     compare: (entries) => openCompare(entries),
-    transfer: (paths, dest) => void startTransfer(paths, dest, pane),
+    transfer: (paths, dest, transferMode) => void startTransfer(paths, dest, pane, transferMode),
     trash: (paths) => void transfer.trash(paths),
     slideshow: () => void startSlideshow(pane.folder),
     export: (paths) => void startExport(paths, pane.folder, pane),
@@ -72,7 +72,7 @@ function prefetchPanes(): void {
   const order = [active(), ...panes.filter((p) => p !== active())].filter(Boolean);
   const seen = new Set<string>();
   const paths = order.flatMap((p) => p.prefetchPaths()).filter((path) => !seen.has(path) && !!seen.add(path));
-  if (paths.length) void invoke("thumbs_prefetch", { paths });
+  void invoke("thumbs_prefetch", { paths });
 }
 
 /** Keeps the backend watching exactly the folders shown in the panes. */
@@ -97,12 +97,13 @@ function activate(i: number): void {
 async function toggleDual(): Promise<void> {
   if (panes.length > 1) {
     const second = panes.pop()!;
-    second.root.remove();
+    second.dispose();
     document.body.classList.remove("dual");
     saveSettings({ dual: false });
     watchPanes();
     activeIndex = -1;
     activate(0);
+    prefetchPanes();
     return;
   }
   document.body.classList.add("dual");
@@ -139,8 +140,16 @@ async function trashFromViewer(path: string): Promise<void> {
   const done = await transfer.trash([path]);
   if (done.includes(path) && !viewer.remove(path)) back();
 }
-const transfer = new Transfer(() => panes.forEach((p) => void p.refreshQuiet()));
-const compare = new Compare({ back: () => backFromCompare() });
+const transfer = new Transfer((relocated = []) => {
+  compare.relocate(relocated);
+  panes.forEach((p) => void p.refreshQuiet());
+});
+const compare = new Compare({ back: () => backFromCompare(), transfer: transferComparedImage });
+
+async function transferComparedImage(entry: Entry, transferMode: TransferMode): Promise<void> {
+  const dest = await open({ multiple: false, directory: true, defaultPath: parentOf(entry.path) ?? undefined });
+  if (typeof dest === "string") await transfer.start([entry.path], dest, transferMode);
+}
 const aboutDialog = new AboutDialog();
 const settingsDialog = new SettingsDialog((choice) => applyLanguage(choice));
 const RESTORE_KEY = "chojema-image-plus.restore";
@@ -178,7 +187,12 @@ function startExport(paths: string[], folder: string | null, from: Gallery | nul
 }
 const slideshowDialog = new SlideshowDialog();
 let modeBeforeSlideshow: Mode = "browser";
-const slideshow = new Slideshow((last) => {
+const slideshow = new Slideshow((last, openFolder) => {
+  const folder = last && parentOf(last.path);
+  if (openFolder && last && folder) {
+    void navigate(folder, last.path);
+    return;
+  }
   setMode(modeBeforeSlideshow === "viewer" ? "browser" : modeBeforeSlideshow);
   if (last && samePath(parentOf(last.path), active().folder)) active().reveal(last.path);
 });
@@ -238,10 +252,10 @@ function toggleFavorite(): void {
   void library.toggle(folder);
 }
 
-async function navigate(path: string, focusPath?: string, pane: Gallery = active()): Promise<void> {
+async function navigate(path: string, focusPath?: string, pane: Gallery = active(), back = false): Promise<void> {
   if (mode !== "browser") setMode("browser");
   activate(panes.indexOf(pane));
-  const ok = await pane.load(path, focusPath);
+  const ok = await pane.load(path, focusPath, back);
   if (!ok) return;
   watchPanes();
   if (pane === panes[1]) saveSettings({ dualFolder: path });
@@ -322,7 +336,7 @@ async function chooseFolder(): Promise<void> {
 }
 
 /** Without a destination: the other pane's folder in dual mode, otherwise a folder picker. */
-async function startTransfer(paths: string[], dest: string | null, from: Gallery): Promise<void> {
+async function startTransfer(paths: string[], dest: string | null, from: Gallery, transferMode?: TransferMode): Promise<void> {
   let target: string | null = dest;
   if (!target && panes.length > 1) {
     target = panes.find((p) => p !== from)?.folder ?? null;
@@ -336,7 +350,7 @@ async function startTransfer(paths: string[], dest: string | null, from: Gallery
     if (typeof picked !== "string") return;
     target = picked;
   }
-  await transfer.start(paths, target);
+  await transfer.start(paths, target, transferMode);
 }
 
 function toggleSidebar(): void {
@@ -370,7 +384,7 @@ window.addEventListener("keydown", (e) => {
       : e.code === "KeyD" ? toggleFavorite
       : e.code === "KeyB" ? () => (mode === "viewer" ? library.toggleOpen() : toggleSidebar())
       : e.code === "Comma" ? () => settingsDialog.open()
-      : e.code === "KeyZ" && mode === "browser" ? () => void transfer.undo()
+      : e.code === "KeyZ" && (mode === "browser" || mode === "compare") ? () => void transfer.undo()
       : digit ? () => library.openFavorite(Number(digit[1]))
       : null;
     if (command) {

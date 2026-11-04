@@ -14,25 +14,30 @@ A lightweight, fast image viewer for Windows and macOS.
 - **Image view**: double-click a thumbnail or press Enter to view it large; press Esc to return to the list.
   - Fit to window, actual size, zoom, and drag to pan
   - Rotate by 90° (view only; the original file is not changed), full screen
+  - Photo details: the right panel (below the image in a small window) shows file details, capture time, camera, lens, exposure, ISO and other main EXIF fields, plus GPS coordinates and altitude. Toggle it with the info button or I. Only information stored in the file is displayed.
 - **Side-by-side compare**: select 2 to 4 thumbnails and click Compare or press C.
   - 2 images side by side or stacked, 3 in a row, 4 in a 2×2 grid
   - Keep zoom and position in step across panes (the same area is shown even at different resolutions); rotate or close each pane
+  - Separate Move (M) and Copy (C) icons for the selected pane's image. Moving or undoing updates its path and name while keeping the zoom state.
 - **Move or copy to another folder**: drag selected thumbnails onto a folder, favorite, recent folder, or the path bar on the left, or use the Move/Copy button (M) to pick a folder.
-  - You choose move or copy each time; when a file with the same name exists you choose keep both (rename), replace, or skip.
+  - The combined Move/Copy button (M) asks which operation to use; separate Move and Copy icons confirm the selected operation. When a file with the same name exists you choose keep both (rename), replace, or skip.
   - Pair files with the same name (RAW+JPEG, .xmp, Live Photo videos, …) can go along, and are renamed to match when the image is renamed.
   - Replaced files go to the trash, and the last operation can be undone with Ctrl (⌘) + Z.
 - **Dual pane** (F6): split the list into two panes, side by side or top and bottom, to work with two folders at once.
   - Drag thumbnails from one pane to the other, or press M, to move or copy them to the other pane's folder.
+  - Separate Move and Copy icons in each pane operate on the selected images and target the opposite folder.
   - Switch panes with Tab; the folder tree and favorites open in the active pane (blue underline).
 - **Move to Trash**: send selected images to the Trash (Recycle Bin on Windows) with the trash button, the Delete key (⌘ + Backspace on macOS), or the right-click menu. Pair files can go along; in the image view the next image is shown afterwards.
 - **Right-click menu**: view, compare side by side, move or copy to another folder, show in Finder (File Explorer), move to Trash
 - **Slideshow** (S or the play button): choose the folder and whether to include subfolders, the order (list sort order / random), images smaller than the window (original size / enlarge) and larger (shrink / original size), the interval, what to show (current date and time, file name, position), looping, and full screen. Settings are remembered.
+  Move the mouse or press Tab during playback to show Previous, Next, Pause/Resume, Go to image folder, Full screen, and Finish. The controls hide after inactivity and stay visible while paused or in use. Go to image folder ends the slideshow, opens the displayed image's containing folder, and selects that file.
 - **Image editing** (Edit button in the image view, E, or right-click): 90° rotation, horizontal and vertical flips, crop (free, original, 1:1, 4:3, 3:2, 16:9 and portrait ratios), resize (long side / percent), and a border with chosen width and color. Save as a copy (name_edit) or replace the original (the original goes to the Trash).
 - **Export to another format** (Ctrl/⌘ + E or right-click): JPEG, PNG, WebP, AVIF, HEIC (macOS), TIFF, BMP
   - Quality, size (original / long side / scale), photo information (keep / remove location only / remove all), background for transparent areas
   - Destination (subfolder of the source folder / same folder / other pane / another folder) and text added to file names
   - Photo orientation is applied to the pixels and the originals are never changed; you are asked about name conflicts.
 - Favorite folders (add, remove, rename, reorder) and a recent folders list
+- The Back folder button (Alt + ←, also ⌘ + [ on macOS) returns to a previously visited folder and restores selection and scroll position. It is separate from Parent folder, and each folder pane keeps its own history.
 - Drag and drop, open several files at once, image file associations (open with a double-click)
 - Settings: interface language (follow system / 한국어 / English), screen shown when the app opens (last folder / empty screen), delete stored thumbnails
 
@@ -77,6 +82,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Slideshow | S |
 | Export selected images to another format | Ctrl (⌘) + E |
 | Parent folder | Backspace, Alt + ↑ |
+| Previously visited folder | Alt + ←, ⌘ + [ (macOS) |
 | Refresh | F5 |
 | Hide or show sidebar | Ctrl (⌘) + B |
 | Settings | Ctrl (⌘) + , |
@@ -88,6 +94,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Back to list | Esc |
 | Move the current image to the Trash | Delete, ⌘ + Backspace (macOS) |
 | Edit the image (while editing: R / L rotate, Enter save, Esc cancel) | E |
+| Toggle photo details | I |
 | Next / previous image | → ↓ PageDown Space / ← ↑ PageUp Backspace |
 | First / last image | Home / End |
 | Zoom in / out | + / - , Ctrl (⌘) + wheel, trackpad pinch |
@@ -105,7 +112,9 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Fit all / all at actual size | 0 / 1 |
 | Keep zoom and position in step on/off | S |
 | Side by side / stacked (2 images) | V |
-| Select next pane | Tab |
+| Focus next pane or control | Tab |
+| Move / copy selected pane's image | M / C |
+| Undo the last move or copy | Ctrl (⌘) + Z |
 | Rotate / close selected pane | R, L / Delete |
 | Full screen | F |
 
