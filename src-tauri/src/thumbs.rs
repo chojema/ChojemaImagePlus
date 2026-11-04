@@ -283,7 +283,11 @@ fn is_svg(path: &Path) -> bool {
 /// The platform's thumbnail engine, which avoids decoding the full image.
 fn fast(path: &Path) -> Option<(Vec<u8>, &'static str, &'static str)> {
     #[cfg(target_os = "macos")]
-    return crate::imageio::thumbnail(path, SIZE);
+    return if crate::files::is_video(path) {
+        crate::imageio::video_thumbnail(path, SIZE)
+    } else {
+        crate::imageio::thumbnail(path, SIZE)
+    };
     #[cfg(not(target_os = "macos"))]
     {
         let _ = path;
@@ -292,11 +296,27 @@ fn fast(path: &Path) -> Option<(Vec<u8>, &'static str, &'static str)> {
 }
 
 fn render(path: &Path) -> Option<DynamicImage> {
+    if crate::files::is_video(path) {
+        return video_frame(path);
+    }
     #[cfg(windows)]
     if let Some(p) = crate::wic::thumbnail(path, SIZE) {
         return image::RgbaImage::from_raw(p.width, p.height, p.rgba).map(DynamicImage::ImageRgba8);
     }
     render_with_image(path)
+}
+
+/// The system's thumbnail for a video, which uses the codecs installed on the system.
+fn video_frame(path: &Path) -> Option<DynamicImage> {
+    #[cfg(windows)]
+    return crate::wic::shell_thumbnail(path, SIZE)
+        .and_then(|p| image::RgbaImage::from_raw(p.width, p.height, p.rgba))
+        .map(DynamicImage::ImageRgba8);
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        None
+    }
 }
 
 fn render_with_image(path: &Path) -> Option<DynamicImage> {

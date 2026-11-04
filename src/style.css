@@ -221,6 +221,30 @@ body.fullscreen #photo-details-content {
   opacity: 1;
 }
 
+#video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: transparent;
+  outline: none;
+  transition: height 0.18s ease;
+}
+
+#video[hidden] {
+  display: none;
+}
+
+/* Full screen is the app's own (F), so the player's separate button is not offered. */
+#video::-webkit-media-controls-fullscreen-button {
+  display: none;
+}
+
+body.fullscreen #stage.bar-peek #video {
+  height: calc(100% - var(--bar-height, 56px));
+}
+
 #image.pixelated,
 .view-img.pixelated {
   image-rendering: pixelated;
@@ -1013,6 +1037,48 @@ body.resizing * {
   content: "?";
   color: var(--muted);
   font-size: 24px;
+}
+
+.cell.video .frame {
+  position: relative;
+}
+
+.play-badge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.play-badge svg {
+  width: 12px;
+  height: 12px;
+  margin-left: 2px;
+  fill: #fff;
+}
+
+.cell.video .frame.broken::after {
+  content: none;
+}
+
+.cell.video .frame.broken .play-badge {
+  left: 50%;
+  top: 50%;
+  bottom: auto;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.cell.video .frame.broken .play-badge svg {
+  width: 22px;
+  height: 22px;
 }
 
 /* Subfolder cells: a large folder icon; one click opens the folder. */

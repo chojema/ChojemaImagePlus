@@ -3,7 +3,8 @@ use crate::thumbs::Thumbs;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder};
 use percent_encoding::percent_decode_str;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::UriSchemeResponder;
@@ -29,6 +30,7 @@ pub fn handle(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     };
     let result = match files::kind(&path) {
         None => return status(StatusCode::FORBIDDEN),
+        Some(Kind::Video) => return video(request, &path),
         Some(Kind::Native) => fs::read(&path).map(|b| (b, files::mime(&path))).ok(),
         Some(Kind::Decoded) => decode(&path).map(|b| (b, "image/png")),
     };
@@ -36,6 +38,61 @@ pub fn handle(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         Some((body, mime)) => ok(body, mime),
         None => status(StatusCode::NOT_FOUND),
     }
+}
+
+/// Longest part of a video sent in one response; players ask for the rest as they go.
+const VIDEO_CHUNK: u64 = 4 * 1024 * 1024;
+
+/// The requested byte range `start..=end` of a file of `len` bytes.
+fn byte_range(header: Option<&str>, len: u64) -> Option<(u64, u64)> {
+    let last = len.checked_sub(1)?;
+    let Some(spec) = header.and_then(|h| h.trim().strip_prefix("bytes=")) else {
+        return Some((0, last.min(VIDEO_CHUNK - 1)));
+    };
+    let (from, to) = spec.split(',').next()?.trim().split_once('-')?;
+    let (start, end) = if from.is_empty() {
+        let n: u64 = to.parse().ok()?;
+        (len.saturating_sub(n), last)
+    } else {
+        let start: u64 = from.parse().ok()?;
+        let end = if to.is_empty() { last } else { to.parse::<u64>().ok()?.min(last) };
+        (start, end)
+    };
+    if start > end {
+        return None;
+    }
+    Some((start, end.min(start + VIDEO_CHUNK - 1)))
+}
+
+/// Videos are served in parts, as media players expect.
+fn video(request: &Request<Vec<u8>>, path: &Path) -> Response<Vec<u8>> {
+    let Ok(mut file) = File::open(path) else {
+        return status(StatusCode::NOT_FOUND);
+    };
+    let Ok(len) = file.metadata().map(|m| m.len()) else {
+        return status(StatusCode::NOT_FOUND);
+    };
+    let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok());
+    let Some((start, end)) = byte_range(range, len) else {
+        return Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{len}"))
+            .header(header::CACHE_CONTROL, "no-store")
+            .body(Vec::new())
+            .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR));
+    };
+    let mut body = vec![0; (end - start + 1) as usize];
+    if file.seek(SeekFrom::Start(start)).is_err() || file.read_exact(&mut body).is_err() {
+        return status(StatusCode::NOT_FOUND);
+    }
+    Response::builder()
+        .status(StatusCode::PARTIAL_CONTENT)
+        .header(header::CONTENT_TYPE, files::mime(path))
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
+        .header(header::CONTENT_LENGTH, body.len())
+        .body(body)
+        .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 /// Answers from the cache at once, or queues the thumbnail and answers once a worker has it.
@@ -97,7 +154,21 @@ fn status(code: StatusCode) -> Response<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::decode;
+    use super::{byte_range, decode, VIDEO_CHUNK};
+
+    #[test]
+    fn video_ranges_are_bounded_parts_of_the_file() {
+        assert_eq!(byte_range(None, 10), Some((0, 9)));
+        assert_eq!(byte_range(Some("bytes=0-"), 10), Some((0, 9)));
+        assert_eq!(byte_range(Some("bytes=0-1"), 10), Some((0, 1)));
+        assert_eq!(byte_range(Some("bytes=4-100"), 10), Some((4, 9)));
+        assert_eq!(byte_range(Some("bytes=-3"), 10), Some((7, 9)));
+        assert_eq!(byte_range(Some("bytes=10-"), 10), None);
+        assert_eq!(byte_range(Some("bytes=0-"), 0), None);
+        let big = VIDEO_CHUNK * 3;
+        assert_eq!(byte_range(Some("bytes=0-"), big), Some((0, VIDEO_CHUNK - 1)));
+        assert_eq!(byte_range(Some("bytes=5-"), big), Some((5, VIDEO_CHUNK + 4)));
+    }
 
     #[test]
     fn transient_errors_are_not_cached_by_the_webview() {

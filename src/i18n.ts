@@ -9,7 +9,7 @@ const ko = {
   folderEmpty: "이 폴더에는 이미지가 없습니다.",
   openFile: "파일 열기",
   openFolder: "폴더 열기",
-  images: "이미지",
+  images: "이미지·동영상",
   first: "첫 번째 이미지입니다.",
   last: "마지막 이미지입니다.",
   loadFailed: "이미지를 표시할 수 없습니다.",
@@ -274,6 +274,11 @@ const ko = {
   edFailed: (reason: string) => `저장하지 못했습니다: ${reason}`,
   edFormat: "이 형식은 덮어쓸 수 없습니다",
   edNotReady: "이미지를 불러온 뒤에 편집할 수 있습니다.",
+  videoFailed: "이 동영상을 재생할 수 없습니다. 이 형식이나 코덱은 지원되지 않을 수 있습니다.",
+  videoNoEdit: "동영상은 편집할 수 없습니다.",
+  videoNoExport: "동영상은 내보낼 수 없습니다. 이미지만 내보냅니다.",
+  videoNoCompare: "동영상은 비교할 수 없습니다. 이미지만 선택하세요.",
+  playPause: "재생 / 일시 정지 (Space)",
 };
 
 const en: typeof ko = {
@@ -281,7 +286,7 @@ const en: typeof ko = {
   folderEmpty: "This folder has no images.",
   openFile: "Open File",
   openFolder: "Open Folder",
-  images: "Images",
+  images: "Images and videos",
   first: "This is the first image.",
   last: "This is the last image.",
   loadFailed: "This image cannot be displayed.",
@@ -546,6 +551,11 @@ const en: typeof ko = {
   edFailed: (reason: string) => `Could not save: ${reason}`,
   edFormat: "this format cannot be replaced",
   edNotReady: "Wait for the image to load before editing.",
+  videoFailed: "This video cannot be played. Its format or codec may not be supported.",
+  videoNoEdit: "Videos cannot be edited.",
+  videoNoExport: "Videos cannot be exported; only the images are exported.",
+  videoNoCompare: "Videos cannot be compared. Select images only.",
+  playPause: "Play / Pause (Space)",
 };
 
 export type Language = "system" | "ko" | "en";

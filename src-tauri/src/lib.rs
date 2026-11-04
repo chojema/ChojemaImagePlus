@@ -106,9 +106,10 @@ async fn browse(dir: String, library: tauri::State<'_, Library>) -> Result<Conte
 #[tauri::command]
 async fn slideshow_list(dir: String, recursive: bool) -> Result<Vec<files::Entry>, String> {
     const LIMIT: usize = 100_000;
-    tauri::async_runtime::spawn_blocking(move || files::scan_tree(Path::new(&dir), recursive, LIMIT))
+    let list = tauri::async_runtime::spawn_blocking(move || files::scan_tree(Path::new(&dir), recursive, LIMIT))
         .await
-        .map_err(|_| "failed".to_string())?
+        .map_err(|_| "failed".to_string())??;
+    Ok(list.into_iter().filter(|e| !files::is_video(Path::new(&e.path))).collect())
 }
 
 #[tauri::command]
@@ -403,6 +404,11 @@ fn image_extensions() -> Vec<&'static str> {
     files::extensions()
 }
 
+#[tauri::command]
+fn video_extensions() -> &'static [&'static str] {
+    files::VIDEO
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -463,6 +469,7 @@ pub fn run() {
             take_launch_paths,
             open_paths,
             image_extensions,
+            video_extensions,
             photo_info,
             library_get,
             favorite_toggle,

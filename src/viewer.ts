@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { $, Entry, formatSize, isFullscreen, isWindows, setWindowTitle, showToast, toggleFullscreen } from "./common";
+import { $, Entry, formatDuration, formatSize, isFullscreen, isVideo, isWindows, setWindowTitle, showToast, toggleFullscreen } from "./common";
 import { t } from "./i18n";
 import { showMenu } from "./menu";
 import { View } from "./view";
@@ -8,6 +8,9 @@ import { PhotoDetails } from "./photo-info";
 
 const APP_NAME = "Chojema Image+";
 const ZOOM_STEP = 1.25;
+const SEEK_STEP = 5;
+/** Toolbar actions that only apply to still images. */
+const IMAGE_ONLY = ["zoom-out", "toggle-zoom", "zoom-in", "fit", "rotate-left", "rotate-right", "edit"];
 
 // Physical key codes keep shortcuts working when a non-Latin input method is active.
 const keymap: Record<string, string> = {
@@ -51,6 +54,8 @@ export class Viewer {
 
   private readonly stage = $<HTMLElement>("stage");
   private readonly img = $<HTMLImageElement>("image");
+  private readonly video = $<HTMLVideoElement>("video");
+  private videoInfo: { width: number; height: number; duration: number } | null = null;
   private readonly message = $<HTMLElement>("message");
   private readonly bar = $<HTMLElement>("bar");
   private readonly infoName = $<HTMLElement>("info-name");
@@ -107,8 +112,14 @@ export class Viewer {
         if (this.current) hooks.export(this.current.path);
       },
       edit: () => {
-        if (this.current && v.loaded) hooks.edit(this.current);
+        if (this.showingVideo) showToast(t.videoNoEdit);
+        else if (this.current && v.loaded) hooks.edit(this.current);
         else showToast(t.edNotReady);
+      },
+      "play-pause": () => {
+        if (!this.showingVideo) return;
+        if (this.video.paused || this.video.ended) void this.video.play().catch(() => {});
+        else this.video.pause();
       },
     };
 
@@ -139,10 +150,15 @@ export class Viewer {
       const entry = this.current;
       if (!entry) return;
       e.preventDefault();
+      const image = !isVideo(entry);
       showMenu(e.clientX, e.clientY, [
         { label: t.menuReveal, run: () => hooks.reveal(entry.path) },
-        { label: t.menuExport, run: () => hooks.export(entry.path) },
-        { label: t.edTitle, run: () => this.actions.edit() },
+        ...(image
+          ? [
+              { label: t.menuExport, run: () => hooks.export(entry.path) },
+              { label: t.edTitle, run: () => this.actions.edit() },
+            ]
+          : [{ label: t.playPause, run: () => this.actions["play-pause"]() }]),
         { label: t.photoDetails, run: () => this.actions.details() },
         "separator",
         { label: t.menuTrash, run: () => hooks.trash(entry.path), danger: true },
@@ -158,7 +174,11 @@ export class Viewer {
 
     // In full screen the bar slides in when the pointer nears the bottom edge.
     window.addEventListener("mousemove", (e) => {
-      this.bar.classList.toggle("peek", window.innerHeight - e.clientY < Math.max(90, this.bar.offsetHeight + 12));
+      const peek = window.innerHeight - e.clientY < Math.max(90, this.bar.offsetHeight + 12);
+      this.bar.classList.toggle("peek", peek);
+      // Video controls move above the bar so both stay usable in full screen.
+      this.stage.classList.toggle("bar-peek", peek);
+      if (peek) this.stage.style.setProperty("--bar-height", `${this.bar.offsetHeight}px`);
     });
     void this.appWindow.onResized(async () => {
       document.body.classList.toggle("fullscreen", await this.appWindow.isFullscreen());
@@ -167,6 +187,10 @@ export class Viewer {
 
   get current(): Entry | undefined {
     return this.entries[this.index];
+  }
+
+  private get showingVideo(): boolean {
+    return !this.video.hidden;
   }
 
   get isFullscreen(): boolean {
@@ -207,6 +231,7 @@ export class Viewer {
   /** Releases the displayed image when returning to the list. */
   close(): void {
     this.loadToken++;
+    this.stopVideo();
     this.img.removeAttribute("src");
     this.img.classList.remove("visible");
     this.preloaded.clear();
@@ -227,6 +252,23 @@ export class Viewer {
       return true;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (this.showingVideo) {
+      if (e.code === "Space" || e.code === "KeyK") {
+        e.preventDefault();
+        this.actions["play-pause"]();
+        return true;
+      }
+      if (e.shiftKey && (e.code === "ArrowLeft" || e.code === "ArrowRight")) {
+        e.preventDefault();
+        this.seek(e.code === "ArrowRight" ? SEEK_STEP : -SEEK_STEP);
+        return true;
+      }
+      if (e.code === "KeyM") {
+        e.preventDefault();
+        this.video.muted = !this.video.muted;
+        return true;
+      }
+    }
     let action = keymap[e.code];
     if (e.code === "KeyR" && e.shiftKey) action = "rotate-left";
     if (!action) return false;
@@ -249,7 +291,13 @@ export class Viewer {
     }
     const v = this.view;
     const parts = [`${this.index + 1} / ${this.entries.length}`];
+    const video = this.showingVideo ? this.videoInfo : null;
     if (v.loaded) parts.push(`${v.width} × ${v.height}`);
+    else if (video) {
+      if (video.width) parts.push(`${video.width} × ${video.height}`);
+      const length = formatDuration(video.duration);
+      if (length) parts.push(length);
+    }
     parts.push(formatSize(entry.size));
     this.infoName.textContent = entry.name;
     this.infoDetail.textContent = parts.join("  ·  ");
@@ -266,7 +314,7 @@ export class Viewer {
     const wanted = new Set<string>();
     for (const offset of [1, -1, 2]) {
       const entry = this.entries[this.index + offset];
-      if (!entry) continue;
+      if (!entry || isVideo(entry)) continue;
       const src = imageSrc(entry);
       wanted.add(src);
       if (!this.preloaded.has(src)) {
@@ -291,9 +339,20 @@ export class Viewer {
     v.height = 0;
     this.img.classList.remove("visible");
     this.showMessage(null);
-    this.updateInfo();
-
+    const video = isVideo(entry);
+    for (const button of this.bar.querySelectorAll<HTMLButtonElement>("[data-action]")) {
+      if (IMAGE_ONLY.includes(button.dataset.action!)) button.disabled = video;
+    }
+    this.stopVideo();
     this.details.show(entry);
+    if (video) {
+      this.img.onload = this.img.onerror = null;
+      this.img.removeAttribute("src");
+      this.playVideo(entry, token);
+      this.preloadAround();
+      return;
+    }
+    this.updateInfo();
 
     this.img.onload = () => {
       if (token !== this.loadToken) return;
@@ -309,6 +368,44 @@ export class Viewer {
     };
     this.img.src = imageSrc(entry);
     this.preloadAround();
+  }
+
+  private playVideo(entry: Entry, token: number): void {
+    const el = this.video;
+    this.videoInfo = { width: 0, height: 0, duration: NaN };
+    el.hidden = false;
+    el.onloadedmetadata = () => {
+      if (token !== this.loadToken) return;
+      this.videoInfo = { width: el.videoWidth, height: el.videoHeight, duration: el.duration };
+      if (el.videoWidth) this.details.dimensions(el.videoWidth, el.videoHeight);
+      this.updateInfo();
+    };
+    el.onerror = () => {
+      if (token !== this.loadToken) return;
+      el.hidden = true;
+      this.showMessage(t.videoFailed);
+      this.updateInfo();
+    };
+    el.src = imageSrc(entry);
+    this.updateInfo();
+    void el.play().catch(() => {});
+  }
+
+  private stopVideo(): void {
+    const el = this.video;
+    el.onloadedmetadata = el.onerror = null;
+    this.videoInfo = null;
+    if (el.hidden && !el.hasAttribute("src")) return;
+    el.pause();
+    el.removeAttribute("src");
+    el.load();
+    el.hidden = true;
+  }
+
+  private seek(seconds: number): void {
+    const el = this.video;
+    if (!Number.isFinite(el.duration)) return;
+    el.currentTime = Math.min(el.duration, Math.max(0, el.currentTime + seconds));
   }
 
   private go(delta: number): void {
@@ -333,7 +430,8 @@ export class Viewer {
     stage.addEventListener(
       "wheel",
       (e) => {
-        if (!v.loaded) return;
+        const video = this.showingVideo;
+        if (!v.loaded && !video) return;
         e.preventDefault();
         const rect = stage.getBoundingClientRect();
         const cx = e.clientX - rect.left;
@@ -341,12 +439,13 @@ export class Viewer {
         const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
 
         // Pinch gestures and Ctrl/Cmd + wheel zoom around the pointer.
-        if (e.ctrlKey || e.metaKey) {
+        // Videos do not zoom; the wheel moves between files as on an unzoomed image.
+        if (!video && (e.ctrlKey || e.metaKey)) {
           v.zoomBy(Math.exp(-dy * 0.01), cx, cy);
           this.updateInfo();
           return;
         }
-        if (v.pannable) {
+        if (!video && v.pannable) {
           const dx = e.deltaMode === 1 ? e.deltaX * 16 : e.deltaX;
           v.panBy(e.shiftKey ? -dy : -dx, e.shiftKey ? 0 : -dy);
           return;

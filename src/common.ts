@@ -9,6 +9,27 @@ export interface Entry {
 
 export const isWindows = navigator.userAgent.includes("Windows");
 
+let videoExtensions = new Set<string>();
+
+export function setVideoExtensions(list: string[]): void {
+  videoExtensions = new Set(list.map((e) => e.toLowerCase()));
+}
+
+export function isVideo(entry: { name: string } | string): boolean {
+  const name = typeof entry === "string" ? entry : entry.name;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && videoExtensions.has(name.slice(dot + 1).toLowerCase());
+}
+
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+
 export const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 function normalize(p: string): string {

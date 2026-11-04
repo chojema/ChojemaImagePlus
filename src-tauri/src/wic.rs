@@ -90,6 +90,10 @@ pub fn decode(path: &Path) -> Option<Pixels> {
 /// Scaled so the longer side is at most `max` pixels.
 pub fn thumbnail(path: &Path, max: u32) -> Option<Pixels> {
     let (factory, source) = open(path)?;
+    fit(&factory, &source, max)
+}
+
+fn fit(factory: &IWICImagingFactory, source: &IWICBitmapSource, max: u32) -> Option<Pixels> {
     unsafe {
         let (mut w, mut h) = (0u32, 0u32);
         source.GetSize(&mut w, &mut h).ok()?;
@@ -97,13 +101,35 @@ pub fn thumbnail(path: &Path, max: u32) -> Option<Pixels> {
             return None;
         }
         if w <= max && h <= max {
-            return pixels(&factory, &source);
+            return pixels(factory, source);
         }
         let ratio = max as f64 / w.max(h) as f64;
         let tw = ((w as f64 * ratio).round() as u32).max(1);
         let th = ((h as f64 * ratio).round() as u32).max(1);
         let scaler = factory.CreateBitmapScaler().ok()?;
-        scaler.Initialize(&source, tw, th, WICBitmapInterpolationModeFant).ok()?;
-        pixels(&factory, &scaler.into())
+        scaler.Initialize(source, tw, th, WICBitmapInterpolationModeFant).ok()?;
+        pixels(factory, &scaler.into())
+    }
+}
+
+/// The thumbnail File Explorer shows, which covers videos for every installed codec.
+pub fn shell_thumbnail(path: &Path, max: u32) -> Option<Pixels> {
+    use windows::Win32::Foundation::SIZE;
+    use windows::Win32::Graphics::Gdi::{DeleteObject, HPALETTE};
+    use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK, SIIGBF_THUMBNAILONLY};
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let wide = HSTRING::from(path.as_os_str());
+        let item: IShellItemImageFactory = SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None).ok()?;
+        let size = SIZE { cx: max as i32, cy: max as i32 };
+        let bitmap = item.GetImage(size, SIIGBF_THUMBNAILONLY | SIIGBF_BIGGERSIZEOK).ok()?;
+        let result = CoCreateInstance::<_, IWICImagingFactory>(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)
+            .ok()
+            .and_then(|factory| {
+                let source = factory.CreateBitmapFromHBITMAP(bitmap, HPALETTE::default(), WICBitmapIgnoreAlpha).ok()?;
+                fit(&factory, &source.into(), max)
+            });
+        let _ = DeleteObject(bitmap.into());
+        result
     }
 }

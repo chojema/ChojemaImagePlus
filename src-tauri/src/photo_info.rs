@@ -35,12 +35,15 @@ struct Location {
 
 /// Reads metadata only; never decodes image pixels or writes to the source file.
 pub fn read(path: &Path) -> Result<PhotoInfo, String> {
-    if crate::files::kind(path).is_none() {
+    let Some(kind) = crate::files::kind(path) else {
         return Err("unsupported".into());
-    }
+    };
     let file = std::fs::metadata(path).map_err(|_| "not_found".to_string())?;
     if !file.is_file() {
         return Err("not_found".into());
+    }
+    if kind == crate::files::Kind::Video {
+        return Ok(PhotoInfo::default());
     }
     // A missing EXIF block is normal (screenshots, exports, GIF/SVG, etc.). Malformed EXIF
     // must not prevent the viewer from displaying an otherwise readable image.

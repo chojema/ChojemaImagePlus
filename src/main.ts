@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { $, Entry, parentOf, samePath, setWindowTitle, showToast, within } from "./common";
+import { $, Entry, isVideo, parentOf, samePath, setVideoExtensions, setWindowTitle, showToast, within } from "./common";
 import { AboutDialog } from "./about";
 import { Compare } from "./compare";
 import { Editor } from "./editor";
@@ -219,7 +219,10 @@ const exporter = new Exporter(
   () => panes.forEach((p) => void p.refreshQuiet()),
 );
 
-function startExport(paths: string[], folder: string | null, from: Gallery | null): void {
+function startExport(all: string[], folder: string | null, from: Gallery | null): void {
+  const paths = all.filter((p) => !isVideo(p));
+  if (paths.length < all.length) showToast(t.videoNoExport, 2400);
+  if (!paths.length) return;
   const source = folder ?? (paths[0] ? parentOf(paths[0]) : null);
   if (!source) return;
   const other = panes.length > 1 ? (panes.find((p) => p !== (from ?? active()))?.folder ?? null) : null;
@@ -548,7 +551,9 @@ async function init(): Promise<void> {
   makePane();
   document.body.classList.toggle("dual-vertical", settings.dualVertical);
   setMode("browser");
-  [extensions] = await Promise.all([invoke<string[]>("image_extensions"), library.load(), tree.load()]);
+  let videos: string[];
+  [extensions, videos] = await Promise.all([invoke<string[]>("image_extensions"), invoke<string[]>("video_extensions"), library.load(), tree.load()]);
+  setVideoExtensions(videos);
 
   const launch = await invoke<string[]>("take_launch_paths");
   if (launch.length) await openPaths(launch);

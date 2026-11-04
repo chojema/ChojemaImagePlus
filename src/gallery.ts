@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { $, Entry, formatSize, parentOf, samePath, within } from "./common";
+import { $, Entry, formatSize, isVideo, parentOf, samePath, within } from "./common";
 import { errorText, t } from "./i18n";
 import { MAX_COMPARE } from "./compare";
 import { showMenu } from "./menu";
@@ -65,6 +65,8 @@ interface Viewport {
 
 const FOLDER_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>';
+
+const PLAY_BADGE = '<span class="play-badge" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg></span>';
 
 /** Thumbnail grid of the images in one folder, with multi-selection. */
 export class Gallery {
@@ -482,7 +484,9 @@ export class Gallery {
     const n = this.selected.size;
     if (n < 2) return this.hooks.toast(t.compareNeed);
     if (n > MAX_COMPARE) return this.hooks.toast(t.compareTooMany);
-    this.hooks.compare([...this.selected].sort((a, b) => a - b).map((i) => this.entries[i]));
+    const entries = [...this.selected].sort((a, b) => a - b).map((i) => this.entries[i]);
+    if (entries.some((e) => isVideo(e))) return this.hooks.toast(t.videoNoCompare);
+    this.hooks.compare(entries);
   }
 
   setFavorite(on: boolean): void {
@@ -803,6 +807,10 @@ export class Gallery {
     img.draggable = false;
     img.alt = "";
     frame.append(img);
+    if (isVideo(entry)) {
+      cell.classList.add("video");
+      frame.insertAdjacentHTML("beforeend", PLAY_BADGE);
+    }
     const name = document.createElement("span");
     name.className = "name";
     name.textContent = entry.name;

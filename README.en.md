@@ -21,6 +21,9 @@ A lightweight, fast image viewer for Windows and macOS.
   - Fit to window, actual size, zoom, and drag to pan
   - Rotate by 90° (view only; the original file is not changed), full screen
   - Photo details: the right panel (below the image in a small window) shows file details, capture time, camera, lens, exposure, ISO and other main EXIF fields, plus GPS coordinates and altitude. Toggle it with the info button or I. Only information stored in the file is displayed.
+- **Videos**: videos appear in the list beside images, with a thumbnail and a play mark, and start playing when opened.
+  - Play/pause (Space), skip 5 seconds (Shift + → / ←), mute (M), and the player bar for seeking and volume. Moving between files, move, copy, Trash and rename work as for images.
+  - Editing, export, side-by-side compare and slideshows apply to images only.
 - **Side-by-side compare**: select 2 to 4 thumbnails and click Compare or press C.
   - 2 images side by side or stacked, 3 in a row, 4 in a 2×2 grid
   - Keep zoom and position in step across panes (the same area is shown even at different resolutions); rotate or close each pane
@@ -54,8 +57,11 @@ A lightweight, fast image viewer for Windows and macOS.
 | JPEG, PNG, GIF, WebP, BMP, ICO, AVIF, SVG | ✓ | ✓ |
 | TIFF | ✓ | ✓ |
 | HEIC, HEIF | ✓¹ | ✓ |
+| Video: MP4, M4V, MOV, WebM | ✓² | ✓² |
 
 ¹ Requires **HEIF Image Extensions** and **HEVC Video Extensions** from the Microsoft Store. If the Windows Photos app opens HEIC files, they are already installed.
+
+² Playback depends on the video codec. Codecs the system web view plays, such as H.264, HEVC and VP9, are supported (HEVC on Windows needs HEVC Video Extensions); files that cannot be played show a notice.
 
 ## Install
 
@@ -106,6 +112,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Edit the image (while editing: R / L rotate, Enter save, Esc cancel) | E |
 | Toggle photo details | I |
 | Next / previous image | → ↓ PageDown Space / ← ↑ PageUp Backspace |
+| Video play/pause / skip 5 seconds / mute | Space / Shift + → ← / M |
 | First / last image | Home / End |
 | Zoom in / out | + / - , Ctrl (⌘) + wheel, trackpad pinch |
 | Fit to window / actual size | 0 / 1, double-click |

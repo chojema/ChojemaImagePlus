@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.18.0
+
+- Show videos (MP4, M4V, MOV, WebM) in the list with a thumbnail and play mark, and play them in the view: play/pause (Space), skip 5 seconds (Shift + → / ←), mute (M), player bar
+- Leave videos out of editing, export, compare and slideshows
+
 ## 0.17.0
 
 - Prefill new-folder names with the highlighted subfolder's name or the current folder's name

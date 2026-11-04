@@ -20,10 +20,14 @@ const DECODED: &[&str] = &[];
 #[cfg(not(target_os = "macos"))]
 const DECODED: &[&str] = &["tif", "tiff", "heic", "heif"];
 
+/// Videos the system web view can play.
+pub const VIDEO: &[&str] = &["mp4", "m4v", "mov", "webm"];
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Native,
     Decoded,
+    Video,
 }
 
 fn extension(path: &Path) -> Option<String> {
@@ -39,6 +43,8 @@ pub fn kind(path: &Path) -> Option<Kind> {
         Some(Kind::Native)
     } else if DECODED.contains(&ext) {
         Some(Kind::Decoded)
+    } else if VIDEO.contains(&ext) {
+        Some(Kind::Video)
     } else {
         None
     }
@@ -49,8 +55,13 @@ pub fn extensions() -> Vec<&'static str> {
         .iter()
         .chain(PLATFORM_NATIVE)
         .chain(DECODED)
+        .chain(VIDEO)
         .copied()
         .collect()
+}
+
+pub fn is_video(path: &Path) -> bool {
+    kind(path) == Some(Kind::Video)
 }
 
 pub fn mime(path: &Path) -> &'static str {
@@ -67,6 +78,13 @@ pub fn mime(path: &Path) -> &'static str {
         Some("tif" | "tiff") => "image/tiff",
         Some("heic") => "image/heic",
         Some("heif") => "image/heif",
+        Some("mp4" | "m4v") => "video/mp4",
+        #[cfg(target_os = "macos")]
+        Some("mov") => "video/quicktime",
+        // Chromium plays QuickTime files with common codecs when they are labelled MP4.
+        #[cfg(not(target_os = "macos"))]
+        Some("mov") => "video/mp4",
+        Some("webm") => "video/webm",
         _ => "application/octet-stream",
     }
 }
@@ -296,15 +314,16 @@ mod tests {
         for d in ["", "b", "a", "a/deep", ".hidden"] {
             std::fs::create_dir_all(base.join(d)).unwrap();
         }
-        for f in ["2.jpg", "10.jpg", "b/x.png", "a/y.png", "a/deep/z.gif", ".hidden/h.jpg", "note.txt"] {
+        for f in ["2.jpg", "10.jpg", "b/x.png", "a/y.png", "a/deep/z.gif", ".hidden/h.jpg", "note.txt", "clip.MOV"] {
             std::fs::write(base.join(f), "x").unwrap();
         }
         let names = |v: Vec<super::Entry>| v.into_iter().map(|e| e.name).collect::<Vec<_>>();
-        assert_eq!(names(super::scan_tree(&base, false, 100).unwrap()), ["2.jpg", "10.jpg"]);
+        assert_eq!(names(super::scan_tree(&base, false, 100).unwrap()), ["2.jpg", "10.jpg", "clip.MOV"]);
         assert_eq!(
             names(super::scan_tree(&base, true, 100).unwrap()),
-            ["2.jpg", "10.jpg", "y.png", "z.gif", "x.png"]
+            ["2.jpg", "10.jpg", "clip.MOV", "y.png", "z.gif", "x.png"]
         );
+        assert!(super::is_video(&base.join("clip.MOV")));
         assert_eq!(super::scan_tree(&base, true, 3).unwrap().len(), 3);
         let _ = std::fs::remove_dir_all(base);
     }
