@@ -1,5 +1,6 @@
 mod edit;
 mod clipboard;
+mod drag_out;
 mod file_actions;
 mod export;
 mod files;
@@ -174,6 +175,48 @@ fn clipboard_read() -> Result<clipboard::Files, String> {
 #[tauri::command]
 fn clipboard_consume(window: tauri::Window, token: String, moved: Vec<String>) -> Result<(), String> {
     clipboard::consume(&token, &moved, clipboard_owner(&window)?)
+}
+
+/// Hands the images being dragged in the list to the system once the pointer leaves the window.
+#[tauri::command]
+async fn drag_out(app: AppHandle, window: tauri::WebviewWindow, paths: Vec<String>) -> Result<(), String> {
+    let paths: Vec<String> = paths
+        .into_iter()
+        .filter(|p| Path::new(p).is_file() && files::kind(Path::new(p)).is_some())
+        .collect();
+    let Some(first) = paths.first() else {
+        return Err("not_found".into());
+    };
+    // Files inside a package (such as a photo library) may be copied out but never moved.
+    let copy_only = paths.iter().any(|p| {
+        transfer::in_package(Path::new(p)) || std::fs::canonicalize(p).is_ok_and(|real| transfer::in_package(&real))
+    });
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.state::<Thumbs>().request(PathBuf::from(first), Box::new(move |thumb| drop(tx.send(thumb))));
+    let icon = rx.recv_timeout(std::time::Duration::from_millis(250)).ok().flatten().map(|(bytes, _)| bytes);
+    drag_start(app, window, paths, icon, copy_only)
+}
+
+#[cfg(any(target_os = "macos", windows))]
+fn drag_start(app: AppHandle, window: tauri::WebviewWindow, paths: Vec<String>, icon: Option<Vec<u8>>, copy_only: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let handle = window.ns_window().map_err(|_| "failed".to_string())? as usize;
+    #[cfg(windows)]
+    let handle = window.hwnd().map_err(|_| "failed".to_string())?.0 as usize;
+    window
+        .run_on_main_thread(move || {
+            let notify = app.clone();
+            let done: drag_out::Done = Box::new(move |dropped| drop(notify.emit("drag-out-ended", dropped)));
+            if !drag_out::start(handle as _, &paths, icon, copy_only, done) {
+                let _ = app.emit("drag-out-ended", false);
+            }
+        })
+        .map_err(|_| "failed".to_string())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn drag_start(_: AppHandle, _: tauri::WebviewWindow, _: Vec<String>, _: Option<Vec<u8>>, _: bool) -> Result<(), String> {
+    Err("unsupported".into())
 }
 
 #[tauri::command]
@@ -485,6 +528,7 @@ pub fn run() {
             clipboard_write,
             clipboard_read,
             clipboard_consume,
+            drag_out,
             folder_roots,
             settings_get,
             settings_set,

@@ -44,6 +44,7 @@ function makePane(): Gallery {
     open: (entries, index) => openViewer(entries, index, pane.folder),
     compare: (entries) => openCompare(entries),
     transfer: (paths, dest, transferMode) => void startTransfer(paths, dest, pane, transferMode),
+    dragOut: (paths) => dragOut(paths),
     trash: (paths) => void transfer.trash(paths),
     createFolder: () => void createFolder(pane),
     rename: (path, folder) => void renameEntry(pane, path, folder),
@@ -525,8 +526,36 @@ $("tree-title").textContent = t.locations;
 
 library.onChange = () => updateFavorite();
 
+/**
+ * Files dragged out of the list. Dropping them back on the window is not an open request: the
+ * drop can arrive just after the drag has ended, so the same files are ignored for a moment longer.
+ */
+let draggingOut: { paths: Set<string>; ended: number } | null = null;
+function dragOut(paths: string[]): void {
+  draggingOut = { paths: new Set(paths), ended: 0 };
+  invoke("drag_out", { paths }).catch(() => (draggingOut = null));
+}
+function isOwnDrop(paths: string[]): boolean {
+  if (!draggingOut) return false;
+  if (draggingOut.ended && performance.now() - draggingOut.ended > 1500) {
+    draggingOut = null;
+    return false;
+  }
+  return !draggingOut.ended || paths.every((p) => draggingOut!.paths.has(p));
+}
+void listen<boolean>("drag-out-ended", (event) => {
+  if (draggingOut) draggingOut.ended = performance.now();
+  document.body.classList.remove("drop-target");
+  // A move to another app removes files from the list; the folder watcher also reports it.
+  if (event.payload) panes.forEach((p) => void p.refreshQuiet());
+});
+
 void getCurrentWebview().onDragDropEvent((event) => {
   const p = event.payload;
+  if (isOwnDrop(p.type === "drop" ? p.paths : [])) {
+    document.body.classList.remove("drop-target");
+    return;
+  }
   if (p.type === "enter" || p.type === "over") document.body.classList.add("drop-target");
   else document.body.classList.remove("drop-target");
   if (p.type === "drop") void openPaths(p.paths);

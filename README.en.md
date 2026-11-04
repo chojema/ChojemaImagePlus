@@ -32,6 +32,9 @@ A lightweight, fast image viewer for Windows and macOS.
   - The combined Move/Copy button (M) asks which operation to use; separate Move and Copy icons confirm the selected operation. When a file with the same name exists you choose keep both (rename), replace, or skip.
   - Pair files with the same name (RAW+JPEG, .xmp, Live Photo videos, …) can go along, and are renamed to match when the image is renamed.
   - Replaced files go to the trash, and the last operation can be undone with Ctrl (⌘) + Z.
+- **Drag out of the app**: drag selected thumbnails out of the window to drop them as files in Finder or File Explorer, on the desktop, or in other apps such as mail or chat.
+  - Where you drop decides between copy and move. In Finder, the same disk moves and another disk copies; hold Option (⌥) to copy or ⌘ to move. In File Explorer, the same drive moves and another drive copies; hold Ctrl to copy or Shift to move.
+  - Bringing them back into the window and releasing does nothing. Files inside a package such as a photo library can only be copied.
 - **Dual pane** (F6): split the list into two panes, side by side or top and bottom, to work with two folders at once.
   - Drag thumbnails from one pane to the other, or press M, to move or copy them to the other pane's folder.
   - Separate Move and Copy icons in each pane operate on the selected images and target the opposite folder.

@@ -13,6 +13,8 @@ interface Hooks {
   compare: (entries: Entry[]) => void;
   /** `dest` null asks for the destination folder. */
   transfer: (paths: string[], dest: string | null, mode?: TransferMode) => void;
+  /** The pointer left the window while dragging: the system takes over the drag. */
+  dragOut: (paths: string[]) => void;
   trash: (paths: string[]) => void;
   createFolder: () => void;
   rename: (path: string, folder: boolean) => void;
@@ -1069,7 +1071,10 @@ export class Gallery {
     return true;
   }
 
-  /** Dragging selected thumbnails onto a folder (tree, favorites, recent, path bar) moves or copies them. */
+  /**
+   * Dragging selected thumbnails onto a folder (tree, favorites, recent, path bar) moves or copies them.
+   * Leaving the window hands the files to the system, so they can be dropped in Finder, File Explorer or other apps.
+   */
   private bindDrag(): void {
     const ghost = $<HTMLElement>("drag-ghost");
     let start: { x: number; y: number; index: number; id: number } | null = null;
@@ -1108,6 +1113,13 @@ export class Gallery {
         ghost.append(img, badge);
         ghost.hidden = false;
         document.body.classList.add("dragging-files");
+      }
+      if (e.clientX < 0 || e.clientY < 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+        const paths = this.selectedPaths();
+        if (this.grid.hasPointerCapture(e.pointerId)) this.grid.releasePointerCapture(e.pointerId);
+        end(e, false);
+        if (paths.length) this.hooks.dragOut(paths);
+        return;
       }
       ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 12}px)`;
       const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-drop]") ?? null;

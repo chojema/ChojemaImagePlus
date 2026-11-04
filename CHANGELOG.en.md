@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.19.0
+
+- Drag selected images out of the list into Finder, File Explorer, the desktop or other apps to copy or move them, following the drop target's default and modifier keys
+
 ## 0.18.0
 
 - Show videos (MP4, M4V, MOV, WebM) in the list with a thumbnail and play mark, and play them in the view: play/pause (Space), skip 5 seconds (Shift + → / ←), mute (M), player bar
