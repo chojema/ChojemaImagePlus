@@ -56,6 +56,13 @@ interface FolderVisit {
   anchor?: string;
 }
 
+interface Viewport {
+  top: number;
+  path?: string;
+  offset: number;
+  rowH: number;
+}
+
 const FOLDER_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>';
 
@@ -83,6 +90,7 @@ export class Gallery {
   private disposed = false;
   private retrySequence = 0;
   private readonly history: FolderVisit[] = [];
+  private suspended: Viewport | null = null;
 
   readonly root: HTMLElement;
   private readonly grid: HTMLElement;
@@ -287,6 +295,42 @@ export class Gallery {
     this.grid.focus({ preventScroll: true });
   }
 
+  /** A highlighted subfolder takes precedence over the folder currently open in this pane. */
+  get newFolderName(): string {
+    const selected = this.folders.find((f) => samePath(f.path, this.folderSelection));
+    const name = selected?.name ?? this.folder?.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+    return name && !/[\\/:]/.test(name) ? name : t.newFolder;
+  }
+
+  /** Save the viewport before display:none makes browser scroll/size readings unreliable. */
+  suspend(): void {
+    if (this.suspended) return;
+    const top = this.grid.scrollTop;
+    const rowH = Math.max(1, this.metrics.rowH);
+    const row = Math.max(0, Math.floor((top - this.metrics.pad) / rowH));
+    const slot = row * this.metrics.cols;
+    const path = slot < this.folders.length ? this.folders[slot]?.path : this.entries[slot - this.folders.length]?.path;
+    this.suspended = { top, path, offset: top - this.metrics.pad - row * rowH, rowH };
+    this.thumbnails.clear();
+  }
+
+  /** Recalculate visible geometry synchronously, before the caller reveals a viewer image. */
+  resume(): void {
+    const saved = this.suspended;
+    if (!saved || !this.grid.clientWidth || !this.grid.clientHeight) return;
+    this.suspended = null;
+    this.relayout();
+    let slot = saved.path ? this.folders.findIndex((f) => samePath(f.path, saved.path)) : -1;
+    if (slot < 0 && saved.path) {
+      const image = this.entries.findIndex((e) => samePath(e.path, saved.path));
+      if (image >= 0) slot = this.folders.length + image;
+    }
+    this.grid.scrollTop = slot < 0 ? saved.top :
+      this.metrics.pad + Math.floor(slot / this.metrics.cols) * this.metrics.rowH + saved.offset * this.metrics.rowH / saved.rowH;
+    this.renderVisible();
+    this.paintSelection();
+  }
+
   focusSearch(): void { this.search.focus(); this.search.select(); }
 
   clearSearch(): void {
@@ -338,6 +382,7 @@ export class Gallery {
     };
     if (this.folder) this.folder = mapped(this.folder);
     if (this.folderSelection) this.folderSelection = mapped(this.folderSelection);
+    if (this.suspended?.path) this.suspended.path = mapped(this.suspended.path);
     for (const visit of this.history) {
       visit.folder = mapped(visit.folder);
       visit.selected = visit.selected.map(mapped);
@@ -539,7 +584,7 @@ export class Gallery {
     const chosen = new Set([...this.selected].map((i) => this.entries[i]?.path));
     const focusPath = this.entries[this.focus]?.path;
     const anchorPath = this.entries[this.anchor]?.path;
-    const top = this.grid.scrollTop;
+    const top = this.suspended?.top ?? this.grid.scrollTop;
     const old = this.entries;
     const nf = this.folders.length;
     this.entries = next;
@@ -555,7 +600,7 @@ export class Gallery {
     }
     this.updateEmpty();
     this.relayout();
-    this.grid.scrollTop = top;
+    if (!this.suspended) this.grid.scrollTop = top;
     this.renderVisible();
     this.paintSelection();
     this.hooks.prefetch();
@@ -669,6 +714,7 @@ export class Gallery {
   }
 
   private relayout(): void {
+    if (this.suspended || !this.grid.clientWidth || !this.grid.clientHeight) return;
     const before = this.metrics;
     this.computeMetrics();
     const m = this.metrics;
@@ -704,7 +750,7 @@ export class Gallery {
 
   private renderVisible(): void {
     if (this.disposed) return;
-    if (!this.grid.clientWidth || !this.grid.clientHeight) {
+    if (this.suspended || !this.grid.clientWidth || !this.grid.clientHeight) {
       this.thumbnails.clear();
       return;
     }
@@ -866,6 +912,8 @@ export class Gallery {
 
   /** Scrolls image `i` (not counting the folder cells before it) into view. */
   private scrollTo(i: number): void {
+    if (this.suspended || !this.grid.clientWidth || !this.grid.clientHeight) return;
+    this.relayout();
     const m = this.metrics;
     if (!m.rowH) return;
     const top = m.pad + Math.floor((this.folders.length + i) / m.cols) * m.rowH;

@@ -144,7 +144,7 @@ async function trashFromViewer(path: string): Promise<void> {
   const done = await transfer.trash([path]);
   if (done.includes(path) && !viewer.remove(path)) back();
 }
-const transfer = new Transfer((relocated = []) => {
+const transfer = new Transfer((relocated = [], foldersChanged = false) => {
   compare.relocate(relocated);
   for (const p of panes) {
     p.relocate(relocated);
@@ -157,18 +157,21 @@ const transfer = new Transfer((relocated = []) => {
     void library.load();
     watchPanes();
     setTitle(active().folder ? `${folderName(active().folder!)} - ${APP_NAME}` : APP_NAME);
-    void tree.refresh().then(() => { if (active().folder) void tree.reveal(active().folder!); });
+    if (foldersChanged) {
+      tree.relocate(relocated);
+      void tree.refresh(relocated.flatMap((d) => [parentOf(d.from), parentOf(d.to)]).filter((p): p is string => !!p));
+    }
   }
 });
 
 async function createFolder(pane: Gallery): Promise<void> {
   const parent = pane.folder;
   if (!parent) return;
-  const path = await transfer.createFolder(parent);
+  const path = await transfer.createFolder(parent, pane.newFolderName);
   if (!path) return;
   await Promise.all(panes.filter((p) => samePath(p.folder, parent)).map((p) => p.refreshQuiet()));
   if (samePath(pane.folder, parent)) pane.revealFolder(path);
-  await tree.refresh();
+  await tree.refresh([parent]);
 }
 
 async function renameEntry(pane: Gallery, path: string, folder: boolean): Promise<void> {
@@ -180,7 +183,6 @@ async function renameEntry(pane: Gallery, path: string, folder: boolean): Promis
     if (folder && samePath(pane.folder, parentOf(renamed.to))) pane.revealFolder(renamed.to);
     else if (!folder) { pane.clearSearch(); pane.reveal(renamed.to); pane.focusGrid(); }
   }
-  await tree.refresh();
 }
 const compare = new Compare({ back: () => backFromCompare(), transfer: transferComparedImage });
 
@@ -252,6 +254,8 @@ function folderName(path: string): string {
 }
 
 function setMode(next: Mode): void {
+  const previous = mode;
+  if (previous === "browser" && next !== "browser") panes.forEach((p) => p.suspend());
   mode = next;
   for (const m of ["browser", "viewer", "compare", "slideshow"]) document.body.classList.toggle(`mode-${m}`, m === next);
   if (next !== "viewer") {
@@ -260,6 +264,7 @@ function setMode(next: Mode): void {
   }
   if (next !== "compare") compare.close();
   if (next === "browser") {
+    if (previous !== "browser") panes.forEach((p) => p.resume());
     library.close();
     const folder = active().folder;
     setTitle(folder ? `${folderName(folder)} - ${APP_NAME}` : APP_NAME);
@@ -320,16 +325,23 @@ function backFromCompare(): void {
   setMode("browser");
 }
 
-function back(): void {
-  const entry = viewer.current;
-  const folder = viewer.folder;
-  if (viewer.isFullscreen) void viewer.toggleFullscreen(false);
-  if (folder && !samePath(folder, active().folder)) {
-    void navigate(folder, entry?.path);
-    return;
-  }
-  setMode("browser");
-  if (entry) active().reveal(entry.path);
+let leavingViewer = false;
+async function back(): Promise<void> {
+  if (leavingViewer) return;
+  leavingViewer = true;
+  try {
+    if (viewer.isFullscreen) await viewer.toggleFullscreen(false);
+    if (mode !== "viewer") return;
+    const entry = viewer.current;
+    const folder = viewer.folder;
+    if (folder && !samePath(folder, active().folder)) {
+      await navigate(folder, entry?.path);
+      return;
+    }
+    setMode("browser");
+    if (entry) active().reveal(entry.path);
+  } catch (err) { showToast(errorText(err)); }
+  finally { leavingViewer = false; }
 }
 
 /** Folders open in the list; files open in the viewer, with their folder listed behind it. */

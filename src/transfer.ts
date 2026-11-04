@@ -53,13 +53,13 @@ function baseName(path: string): string {
 
 /** Moving and copying images (and their pair files) between folders, with conflict prompts and undo. */
 export class Transfer {
-  private last: { mode: Mode | "rename"; items: Done[] } | null = null;
+  private last: { mode: Mode | "rename"; items: Done[]; foldersChanged?: boolean } | null = null;
   private busy = false;
   private readonly panel = $<HTMLElement>("progress");
   private readonly label = $<HTMLElement>("progress-label");
   private readonly fill = $<HTMLElement>("progress-fill");
 
-  constructor(private readonly refresh: (relocated?: Done[]) => void) {
+  constructor(private readonly refresh: (relocated?: Done[], foldersChanged?: boolean) => void) {
     $("progress-cancel").textContent = t.cancel;
     $("progress-cancel").addEventListener("click", () => void invoke("transfer_cancel"));
     void listen<Progress>("transfer-progress", (e) => {
@@ -79,11 +79,11 @@ export class Transfer {
     }
   }
 
-  async createFolder(parent: string): Promise<string | null> {
+  async createFolder(parent: string, suggestedName = t.newFolder): Promise<string | null> {
     if (this.busy) return null;
     this.busy = true;
     try {
-      let name = t.newFolder;
+      let name = suggestedName;
       while (true) {
         const a = await ask({ title: t.newFolder, input: { label: t.entryName, value: name },
           choices: [{ id: "create", label: t.create, primary: true }, { id: "cancel", label: t.cancel }], cancel: "cancel" });
@@ -117,8 +117,8 @@ export class Transfer {
           if (plan.pairs.length && a.checked !== settings.includePairs) saveSettings({ includePairs: a.checked });
           const result = await invoke<Outcome>("rename_entry", { path, name, includePairs: a.checked });
           if (result.done.length) {
-            this.last = { mode: "rename", items: result.done };
-            this.refresh(result.done);
+            this.last = { mode: "rename", items: result.done, foldersChanged: folder };
+            this.refresh(result.done, folder);
             showToast(`${t.entryRenamed} · ${t.undoHint}`, 4000);
           }
           if (result.failed.length) await this.reportFailures(result.failed);
@@ -299,7 +299,7 @@ export class Transfer {
     this.busy = true;
     try {
       const outcome = await invoke<Outcome>(last.mode === "rename" ? "rename_undo" : "transfer_undo", { mode: last.mode, items: last.items });
-      this.refresh(last.mode !== "copy" ? outcome.done : undefined);
+      this.refresh(last.mode !== "copy" ? outcome.done : undefined, last.foldersChanged);
       showToast(t.undone(outcome.done.length));
       if (outcome.failed.length) await this.reportFailures(outcome.failed);
     } catch (err) {

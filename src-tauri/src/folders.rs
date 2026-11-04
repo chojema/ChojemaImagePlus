@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 pub struct Folder {
     pub path: String,
     pub name: String,
-    pub has_children: bool,
+    /// Unknown until this folder is expanded; listing siblings never opens their contents.
+    pub has_children: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -74,7 +75,6 @@ fn visible_dirs(dir: &Path) -> impl Iterator<Item = PathBuf> {
 }
 
 fn folder(path: PathBuf, name: Option<String>) -> Folder {
-    let has_children = visible_dirs(&path).next().is_some();
     Folder {
         name: name.unwrap_or_else(|| {
             path.file_name()
@@ -82,7 +82,7 @@ fn folder(path: PathBuf, name: Option<String>) -> Folder {
                 .unwrap_or_else(|| path.to_string_lossy().into_owned())
         }),
         path: path.to_string_lossy().into_owned(),
-        has_children,
+        has_children: None,
     }
 }
 
@@ -155,7 +155,23 @@ pub fn roots(places: Vec<(PathBuf, String)>) -> Roots {
 
 #[cfg(test)]
 mod tests {
-    use super::subfolders;
+    use super::{children, folder, subfolders};
+
+    #[test]
+    fn folder_descriptions_do_not_list_child_contents() {
+        let base = std::env::temp_dir().join(format!("image-plus-lazy-folders-{}", std::process::id()));
+        std::fs::create_dir_all(base.join("empty")).unwrap();
+        std::fs::create_dir_all(base.join("protected/deeper")).unwrap();
+        let parent = folder(base.clone(), None);
+        assert!(parent.has_children.is_none());
+        let list = children(&base).unwrap();
+        assert_eq!(list.len(), 2);
+        assert!(list.iter().all(|f| f.has_children.is_none()));
+        // Contents are discovered only when the requested directory itself is expanded.
+        assert!(children(&base.join("empty")).unwrap().is_empty());
+        assert_eq!(children(&base.join("protected")).unwrap()[0].name, "deeper");
+        std::fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn subfolders_lists_visible_folders_by_name_and_skips_files() {

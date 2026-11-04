@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.17.0
+
+- Prefill new-folder names with the highlighted subfolder's name or the current folder's name
+- Fix scroll displacement when returning from the image view, including dual panes, resizing or refreshing while hidden, and leaving full screen
+- Avoid rebuilding the entire folder tree after image moves, renames and undo; inspect subfolders only when expanded to avoid access prompts for unrelated protected folders
+
 ## 0.16.0
 
 - Create a folder from the list (Ctrl/⌘ + Shift + N) and select it afterwards

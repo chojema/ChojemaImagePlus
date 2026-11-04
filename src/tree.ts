@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { samePath, within } from "./common";
+import type { Done } from "./transfer";
 import { t } from "./i18n";
 
 interface Folder {
   path: string;
   name: string;
-  has_children: boolean;
+  has_children: boolean | null;
 }
 
 interface Roots {
@@ -21,6 +22,7 @@ export class FolderTree {
   private roots: HTMLElement[] = [];
   private active: string | null = null;
   private readonly pending = new Map<HTMLElement, Promise<boolean>>();
+  private readonly revisions = new WeakMap<HTMLElement, number>();
 
   constructor(
     private readonly container: HTMLElement,
@@ -40,10 +42,11 @@ export class FolderTree {
     if (this.active) this.highlight(this.active);
   }
 
-  async refresh(): Promise<void> {
-    const open = new Set([...this.container.querySelectorAll<HTMLElement>(".node.open")].map((n) => n.dataset.path));
-    const active = this.active;
-    await this.load();
+  /** Refresh only parents changed by a folder operation, without reopening unrelated branches. */
+  async refresh(paths: string[]): Promise<void> {
+    const nodes = [...this.container.querySelectorAll<HTMLElement>(".node")]
+      .filter((n) => paths.some((p) => samePath(p, n.dataset.path)));
+    const open = new Set(nodes.flatMap((n) => [...n.querySelectorAll<HTMLElement>(".node.open")].map((c) => c.dataset.path)));
     const restore = async (nodes: HTMLElement[]): Promise<void> => {
       for (const item of nodes) {
         if (!open.has(item.dataset.path)) continue;
@@ -51,8 +54,39 @@ export class FolderTree {
         await restore([...item.querySelectorAll<HTMLElement>(":scope > .children > .node")]);
       }
     };
-    await restore(this.roots);
-    if (active) await this.reveal(active);
+    for (const item of nodes) {
+      this.revisions.set(item, (this.revisions.get(item) ?? 0) + 1);
+      this.pending.delete(item);
+      item.classList.remove("loading");
+      delete item.dataset.loaded;
+      if (item.classList.contains("open")) {
+        if (await this.loadChildren(item)) await restore([...item.querySelectorAll<HTMLElement>(":scope > .children > .node")]);
+      } else {
+        item.querySelector(":scope > .children")!.replaceChildren();
+        item.querySelector<HTMLElement>(":scope > .row .twisty")!.hidden = false;
+      }
+    }
+    if (this.active) this.highlight(this.active);
+  }
+
+  relocate(changes: Done[]): void {
+    const mapped = (path: string) => {
+      const d = changes.find((d) => within(d.from, path));
+      return d ? d.to + path.normalize("NFC").slice(d.from.normalize("NFC").length) : path;
+    };
+    if (this.active) this.active = mapped(this.active);
+    for (const item of this.container.querySelectorAll<HTMLElement>(".node")) {
+      const path = mapped(item.dataset.path!);
+      if (path === item.dataset.path) continue;
+      item.dataset.path = path;
+      const row = item.querySelector<HTMLElement>(":scope > .row")!;
+      row.dataset.drop = row.title = path;
+      row.querySelector<HTMLElement>(".label")!.textContent = path.split(/[\\/]/).pop() || path;
+      this.revisions.set(item, (this.revisions.get(item) ?? 0) + 1);
+      this.pending.delete(item);
+      item.classList.remove("loading");
+      delete item.dataset.loaded;
+    }
   }
 
   private node(folder: Folder, depth: number, kind = ""): HTMLElement {
@@ -71,7 +105,7 @@ export class FolderTree {
     twisty.type = "button";
     twisty.className = "twisty";
     twisty.tabIndex = -1;
-    twisty.hidden = !folder.has_children;
+    twisty.hidden = folder.has_children === false;
     twisty.addEventListener("click", (e) => {
       e.stopPropagation();
       void this.toggle(item);
@@ -84,7 +118,7 @@ export class FolderTree {
     label.className = "label";
     label.textContent = folder.name;
     row.append(twisty, icon, label);
-    row.addEventListener("click", () => this.onSelect(folder.path));
+    row.addEventListener("click", () => this.onSelect(item.dataset.path!));
     row.addEventListener("dblclick", () => void this.toggle(item));
 
     const children = document.createElement("div");
@@ -99,6 +133,7 @@ export class FolderTree {
   private async expand(item: HTMLElement): Promise<void> {
     if (item.classList.contains("open")) return;
     if (!item.dataset.loaded && !(await this.loadChildren(item))) return;
+    if (!item.querySelector(":scope > .children")!.childElementCount) return;
     item.classList.add("open");
   }
 
@@ -109,17 +144,23 @@ export class FolderTree {
     const children = item.querySelector<HTMLElement>(":scope > .children")!;
     const depth = Number(item.dataset.depth) + 1;
     item.classList.add("loading");
-    pending = invoke<Folder[]>("folder_children", { path: item.dataset.path })
+    const path = item.dataset.path;
+    const revision = this.revisions.get(item) ?? 0;
+    pending = invoke<Folder[]>("folder_children", { path })
       .then((list) => {
+        if (!item.isConnected || item.dataset.path !== path || (this.revisions.get(item) ?? 0) !== revision) return false;
         children.replaceChildren(...list.map((f) => this.node(f, depth)));
         item.dataset.loaded = "1";
-        if (!list.length) item.querySelector<HTMLElement>(":scope > .row .twisty")!.hidden = true;
+        item.querySelector<HTMLElement>(":scope > .row .twisty")!.hidden = !list.length;
+        if (!list.length) item.classList.remove("open");
         return true;
       })
       .catch(() => false)
       .finally(() => {
-        item.classList.remove("loading");
-        this.pending.delete(item);
+        if (this.pending.get(item) === pending) {
+          item.classList.remove("loading");
+          this.pending.delete(item);
+        }
       });
     this.pending.set(item, pending);
     return pending;
