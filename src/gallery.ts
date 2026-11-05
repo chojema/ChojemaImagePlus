@@ -216,7 +216,7 @@ export class Gallery {
         return;
       }
       if (cell.dataset.folder) {
-        this.hooks.navigate(cell.dataset.folder);
+        this.selectFolder(cell.dataset.folder);
         return;
       }
       this.clickCell(Number(cell.dataset.index), e);
@@ -267,8 +267,9 @@ export class Gallery {
       ]);
     });
     this.grid.addEventListener("dblclick", (e) => {
-      const cell = (e.target as Element).closest<HTMLElement>(".cell[data-index]");
-      if (cell) this.openAt(Number(cell.dataset.index));
+      const cell = (e.target as Element).closest<HTMLElement>(".cell");
+      if (cell?.dataset.folder) this.hooks.navigate(cell.dataset.folder);
+      else if (cell?.dataset.index) this.openAt(Number(cell.dataset.index));
     });
   }
 
@@ -360,6 +361,13 @@ export class Gallery {
     this.grid.scrollTop = 0;
     this.render();
     this.hooks.prefetch();
+  }
+
+  private selectFolder(path: string): void {
+    this.folderSelection = path;
+    this.selected.clear();
+    this.focus = this.anchor = -1;
+    this.paintSelection();
   }
 
   revealFolder(path: string): void {
@@ -1033,8 +1041,14 @@ export class Gallery {
     if (e.code === "Escape" && this.search.value) {
       e.preventDefault(); this.clearSearch(); return true;
     }
-    if (e.code === "Escape" && this.selected.size) {
+    if (e.code === "Escape" && (this.selected.size || this.folderSelection)) {
+      this.folderSelection = null;
       this.select(new Set());
+      return true;
+    }
+    if ((e.code === "Enter" || e.code === "NumpadEnter") && this.folderSelection) {
+      e.preventDefault();
+      this.hooks.navigate(this.folderSelection);
       return true;
     }
     if (!this.entries.length) return false;

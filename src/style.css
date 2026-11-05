@@ -1082,10 +1082,6 @@ body.resizing * {
 }
 
 /* Subfolder cells: a large folder icon; one click opens the folder. */
-.folder-cell {
-  cursor: pointer;
-}
-
 .folder-cell .frame {
   background: none;
 }

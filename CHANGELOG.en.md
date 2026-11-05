@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.19.1
+
+- Fix the list not updating for changes made by other apps in folders opened through a symbolic link (such as `~/Dropbox` on macOS)
+- Single-click a subfolder in the list to select it; double-click or press Enter to open it
+
 ## 0.19.0
 
 - Drag selected images out of the list into Finder, File Explorer, the desktop or other apps to copy or move them, following the drop target's default and modifier keys

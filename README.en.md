@@ -6,7 +6,7 @@ A lightweight, fast image viewer for Windows and macOS.
 
 ## Features
 
-- **List view**: choose a folder in the left-hand tree (favorites, recent folders, locations) to see its subfolders and images as thumbnails on the right. Click a subfolder to open it, or drop photos on it to move or copy them there.
+- **List view**: choose a folder in the left-hand tree (favorites, recent folders, locations) to see its subfolders and images as thumbnails on the right. Click a subfolder to select it and double-click it or press Enter to open it, or drop photos on it to move or copy them there.
   - Folders with tens of thousands of images open at once; thumbnails on screen are made first and the rest are prepared in the background.
   - The list updates automatically when other programs add or remove files in the folder.
   - Sort by name, date modified, or size; adjust thumbnail size
@@ -92,6 +92,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Copy / cut / paste image files | Ctrl (⌘) + C / X / V |
 | Move between thumbnails / extend selection | Arrow keys / Shift + arrow keys |
 | View large | Enter, Space, double-click |
+| Open the selected subfolder | Enter, double-click |
 | Select all | Ctrl (⌘) + A |
 | Compare 2–4 selected images | C |
 | Move or copy selected images to another folder | M (to the other pane in dual mode), drag onto a folder |
