@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.0
+
+- Hold the left mouse button on a fitted image in the single view to zoom that spot to twice the size; move while holding to look across the whole image by pointer position, and release to return
+
 ## 0.19.1
 
 - Fix the list not updating for changes made by other apps in folders opened through a symbolic link (such as `~/Dropbox` on macOS)

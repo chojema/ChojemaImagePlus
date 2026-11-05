@@ -9,6 +9,7 @@ import { PhotoDetails } from "./photo-info";
 const APP_NAME = "Chojema Image+";
 const ZOOM_STEP = 1.25;
 const SEEK_STEP = 5;
+const HOLD_DELAY = 150;
 /** Toolbar actions that only apply to still images. */
 const IMAGE_ONLY = ["zoom-out", "toggle-zoom", "zoom-in", "fit", "rotate-left", "rotate-right", "edit"];
 
@@ -69,6 +70,7 @@ export class Viewer {
   private wheelAccum = 0;
   private wheelLock = 0;
   private drag: { id: number; x: number; y: number } | null = null;
+  private hold: { id: number; x: number; y: number; scale: number; timer: number; active: boolean } | null = null;
 
   readonly actions: Record<string, () => void>;
 
@@ -332,6 +334,7 @@ export class Viewer {
   show(i: number): void {
     if (i < 0 || i >= this.entries.length) return;
     this.index = i;
+    this.endHold();
     const entry = this.entries[i];
     const token = ++this.loadToken;
     const v = this.view;
@@ -424,6 +427,18 @@ export class Viewer {
     this.updateInfo();
   }
 
+  /** Ends a press-and-hold zoom, returning the image to the fitted view. */
+  private endHold(): void {
+    const p = this.hold;
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.hold = null;
+    if (!p.active) return;
+    this.stage.classList.remove("holding");
+    if (this.view.loaded) this.view.fit();
+    this.updateInfo();
+  }
+
   private bindPointer(): void {
     const stage = this.stage;
     const v = this.view;
@@ -462,13 +477,40 @@ export class Viewer {
       { passive: false },
     );
 
+    const local = (x: number, y: number) => {
+      const rect = stage.getBoundingClientRect();
+      return [x - rect.left, y - rect.top] as const;
+    };
     stage.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || !v.loaded || !v.pannable) return;
-      this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      if (e.button !== 0 || !v.loaded || this.showingVideo) return;
+      if (v.pannable) {
+        this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        stage.setPointerCapture(e.pointerId);
+        stage.classList.add("dragging");
+        return;
+      }
+      if (!v.fitted) return;
+      // Holding the button on a fitted image shows it at twice its size until release.
+      // The short delay keeps clicks and double-clicks from flashing the zoom.
+      const hold = { id: e.pointerId, x: e.clientX, y: e.clientY, scale: v.scale * 2, active: false, timer: 0 };
+      hold.timer = window.setTimeout(() => {
+        if (this.hold !== hold) return;
+        hold.active = true;
+        stage.classList.add("holding");
+        v.zoomHold(hold.scale, ...local(hold.x, hold.y));
+        this.updateInfo();
+      }, HOLD_DELAY);
+      this.hold = hold;
       stage.setPointerCapture(e.pointerId);
-      stage.classList.add("dragging");
     });
     stage.addEventListener("pointermove", (e) => {
+      const p = this.hold;
+      if (p && p.id === e.pointerId) {
+        p.x = e.clientX;
+        p.y = e.clientY;
+        if (p.active) v.zoomHold(p.scale, ...local(p.x, p.y));
+        return;
+      }
       const d = this.drag;
       if (!d || d.id !== e.pointerId) return;
       v.panBy(e.clientX - d.x, e.clientY - d.y);
@@ -476,12 +518,17 @@ export class Viewer {
       d.y = e.clientY;
     });
     const endDrag = (e: PointerEvent) => {
+      if (this.hold && this.hold.id === e.pointerId) {
+        this.endHold();
+        return;
+      }
       if (!this.drag || this.drag.id !== e.pointerId) return;
       this.drag = null;
       stage.classList.remove("dragging");
     };
     stage.addEventListener("pointerup", endDrag);
     stage.addEventListener("pointercancel", endDrag);
+    stage.addEventListener("lostpointercapture", endDrag);
     stage.addEventListener("dblclick", (e) => {
       const rect = stage.getBoundingClientRect();
       this.toggleZoom(e.clientX - rect.left, e.clientY - rect.top);

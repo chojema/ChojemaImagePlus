@@ -92,6 +92,19 @@ export class View {
     this.zoomTo(this.scale * factor, cx, cy);
   }
 
+  /** Shows the image at `scale` with the pointer's place in the stage choosing the matching part of the image. */
+  zoomHold(scale: number, cx: number, cy: number): void {
+    const { w, h } = this.box;
+    const s = this.stageSize;
+    this.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
+    this.fitted = false;
+    const px = s.w ? Math.min(1, Math.max(0, cx / s.w)) : 0.5;
+    const py = s.h ? Math.min(1, Math.max(0, cy / s.h)) : 0.5;
+    this.tx = Math.max(0, (w * this.scale - s.w) / 2) * (1 - 2 * px);
+    this.ty = Math.max(0, (h * this.scale - s.h) / 2) * (1 - 2 * py);
+    this.apply();
+  }
+
   panBy(dx: number, dy: number): void {
     this.tx += dx;
     this.ty += dy;

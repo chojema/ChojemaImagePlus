@@ -19,6 +19,7 @@ A lightweight, fast image viewer for Windows and macOS.
 - **Image view**: double-click a thumbnail or press Enter to view it large; press Esc to return to the list.
   - Returning restores each pane's scroll position and keeps the image you were viewing on screen.
   - Fit to window, actual size, zoom, and drag to pan
+  - Hold the left mouse button on a fitted image to see that spot at twice the size; move while holding to look across the whole image, and release to return
   - Rotate by 90° (view only; the original file is not changed), full screen
   - Photo details: the right panel (below the image in a small window) shows file details, capture time, camera, lens, exposure, ISO and other main EXIF fields, plus GPS coordinates and altitude. Toggle it with the info button or I. Only information stored in the file is displayed.
 - **Videos**: videos appear in the list beside images, with a thumbnail and a play mark, and start playing when opened.
@@ -120,6 +121,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | First / last image | Home / End |
 | Zoom in / out | + / - , Ctrl (⌘) + wheel, trackpad pinch |
 | Fit to window / actual size | 0 / 1, double-click |
+| Zoom 2× while held (move to look around) | Hold the left button on the image |
 | Rotate right / left | R / L |
 | Full screen / exit | F, F11, Enter / Esc |
 | Favorites and recent folders | Ctrl (⌘) + B |

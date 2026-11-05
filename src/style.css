@@ -205,6 +205,10 @@ body.fullscreen #photo-details-content {
   cursor: grabbing;
 }
 
+#stage.holding {
+  cursor: zoom-in;
+}
+
 #image,
 .view-img {
   position: absolute;
