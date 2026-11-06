@@ -62,22 +62,10 @@ function makePane(): Gallery {
     dual: () => void toggleDual(),
     dualLayout: () => toggleDualLayout(),
     sortChanged: () => panes.forEach((p) => p.applySort()),
-    prefetch: () => prefetchPanes(),
   });
   pane.applySettings();
   panes.push(pane);
   return pane;
-}
-
-/**
- * One background thumbnail list for all panes (the active one first): the backend keeps a single
- * list, so each pane sending only its own would cancel the other's.
- */
-function prefetchPanes(): void {
-  const order = [active(), ...panes.filter((p) => p !== active())].filter(Boolean);
-  const seen = new Set<string>();
-  const paths = order.flatMap((p) => p.prefetchPaths()).filter((path) => !seen.has(path) && !!seen.add(path));
-  void invoke("thumbs_prefetch", { paths });
 }
 
 /** Keeps the backend watching exactly the folders shown in the panes. */
@@ -108,7 +96,6 @@ async function toggleDual(): Promise<void> {
     watchPanes();
     activeIndex = -1;
     activate(0);
-    prefetchPanes();
     return;
   }
   document.body.classList.add("dual");

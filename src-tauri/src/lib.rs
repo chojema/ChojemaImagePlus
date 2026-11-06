@@ -252,8 +252,8 @@ fn watch_folders(folders: Vec<String>, watch: tauri::State<watch::FolderWatch>) 
 }
 
 #[tauri::command]
-fn thumbs_prefetch(paths: Vec<String>, thumbs: tauri::State<Thumbs>) {
-    thumbs.prefetch(paths.into_iter().map(PathBuf::from).collect());
+fn thumbs_viewport(owner: u64, revision: u64, paths: Vec<String>, visible: usize, thumbs: tauri::State<Thumbs>) {
+    thumbs.viewport(owner, revision, paths.into_iter().map(PathBuf::from).collect(), visible);
 }
 
 #[tauri::command]
@@ -533,7 +533,7 @@ pub fn run() {
             settings_get,
             settings_set,
             thumbs_clear,
-            thumbs_prefetch,
+            thumbs_viewport,
             watch_folders,
             transfer_plan,
             transfer_run,

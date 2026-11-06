@@ -22,6 +22,22 @@ pub fn thumbnail(path: &Path, max: u32) -> Option<(Vec<u8>, &'static str, &'stat
     let yes: &CFType = CFBoolean::new(true).as_ref();
     let no: &CFType = CFBoolean::new(false).as_ref();
     let size = CFNumber::new_i32(max as i32);
+    // Reuse an embedded preview only when it can supply the full requested resolution.
+    // With creation disabled, an absent thumbnail does not decode the original twice.
+    let embedded_options = unsafe {
+        CFDictionary::<CFString, CFType>::from_slices(
+            &[
+                kCGImageSourceCreateThumbnailFromImageAlways,
+                kCGImageSourceCreateThumbnailWithTransform,
+                kCGImageSourceThumbnailMaxPixelSize,
+                kCGImageSourceShouldCache,
+            ],
+            &[no, yes, size.as_ref(), no],
+        )
+    };
+    let embedded = unsafe { source.thumbnail_at_index(0, Some(embedded_options.as_opaque())) }
+        .filter(|image| CGImage::width(Some(image)).max(CGImage::height(Some(image))) >= max as usize);
+    if let Some(image) = embedded { return encode(&image); }
     let options = unsafe {
         CFDictionary::<CFString, CFType>::from_slices(
             &[
@@ -79,4 +95,82 @@ fn encode(image: &CGImage) -> Option<(Vec<u8>, &'static str, &'static str)> {
         return None;
     }
     Some((data.to_vec(), ext, mime))
+}
+
+#[cfg(test)]
+mod tests {
+    use image::{ImageEncoder, GenericImageView};
+
+    fn jpeg(w: u32, h: u32, color: [u8; 3]) -> Vec<u8> {
+        let mut data = Vec::new();
+        let img = image::RgbImage::from_pixel(w, h, image::Rgb(color));
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut data, 90)
+            .write_image(&img, w, h, image::ExtendedColorType::Rgb8).unwrap();
+        data
+    }
+
+    // An independent TIFF IFD1 fixture: main pixels are red, embedded JPEG is blue.
+    fn with_thumbnail(main: &[u8], thumbnail: &[u8]) -> Vec<u8> {
+        let mut tiff = b"II\x2a\0\x08\0\0\0".to_vec();
+        tiff.extend(1u16.to_le_bytes());
+        tiff.extend(0x0112u16.to_le_bytes()); // IFD0 orientation: rotate 90 degrees.
+        tiff.extend(3u16.to_le_bytes());
+        tiff.extend(1u32.to_le_bytes());
+        tiff.extend(6u32.to_le_bytes());
+        tiff.extend(26u32.to_le_bytes()); // Next IFD.
+        tiff.extend(3u16.to_le_bytes());
+        for (tag, ty, value) in [(0x0103u16, 3u16, 6u32), (0x0201, 4, 68), (0x0202, 4, thumbnail.len() as u32)] {
+            tiff.extend(tag.to_le_bytes());
+            tiff.extend(ty.to_le_bytes());
+            tiff.extend(1u32.to_le_bytes());
+            tiff.extend(value.to_le_bytes());
+        }
+        tiff.extend(0u32.to_le_bytes());
+        assert_eq!(tiff.len(), 68);
+        tiff.extend(thumbnail);
+        let mut exif = b"Exif\0\0".to_vec();
+        exif.extend(tiff);
+        let mut data = main[..2].to_vec();
+        data.extend([0xff, 0xe1]);
+        data.extend(((exif.len() + 2) as u16).to_be_bytes());
+        data.extend(exif);
+        data.extend(&main[2..]);
+        data
+    }
+
+    #[test]
+    fn large_embedded_preview_is_reused_and_upright() {
+        let path = std::env::temp_dir().join(format!("image-plus-embedded-large-{}.jpg", std::process::id()));
+        std::fs::write(&path, with_thumbnail(&jpeg(800, 300, [240, 0, 0]), &jpeg(400, 150, [0, 0, 240]))).unwrap();
+        let (bytes, _, _) = super::thumbnail(&path, 320).unwrap();
+        let image = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(image.dimensions(), (120, 320));
+        let pixel = image.get_pixel(60, 160);
+        assert!(pixel[2] > 200 && pixel[0] < 20, "expected the embedded blue pixels");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn undersized_embedded_preview_keeps_full_thumbnail_quality() {
+        let path = std::env::temp_dir().join(format!("image-plus-embedded-small-{}.jpg", std::process::id()));
+        std::fs::write(&path, with_thumbnail(&jpeg(800, 300, [240, 0, 0]), &jpeg(80, 30, [0, 0, 240]))).unwrap();
+        let (bytes, _, _) = super::thumbnail(&path, 320).unwrap();
+        let image = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(image.dimensions(), (120, 320));
+        let pixel = image.get_pixel(60, 160);
+        assert!(pixel[0] > 200 && pixel[2] < 20, "a small embedded image must not replace the full thumbnail");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn no_embedded_preview_falls_back_and_preserves_transparency() {
+        let path = std::env::temp_dir().join(format!("image-plus-alpha-{}.png", std::process::id()));
+        image::RgbaImage::from_pixel(640, 320, image::Rgba([0, 200, 0, 100])).save(&path).unwrap();
+        let (bytes, _, mime) = super::thumbnail(&path, 320).unwrap();
+        assert_eq!(mime, "image/png");
+        let image = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(image.dimensions(), (320, 160));
+        assert!((90..=110).contains(&image.get_pixel(100, 80)[3]));
+        let _ = std::fs::remove_file(path);
+    }
 }

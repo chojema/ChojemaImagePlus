@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.1
+
+- Let cached gallery images load without waiting behind slow thumbnail generation, and fill the visible viewport before preparing nearby images
+- Discard obsolete queued work after scrolling or switching folders; avoid invalidating valid thumbnail caches on a timeout
+- Reuse sufficiently large embedded previews for macOS thumbnails
+
 ## 0.20.0
 
 - Hold the left mouse button on a fitted image in the single view to zoom that spot to twice the size; move while holding to look across the whole image by pointer position, and release to return

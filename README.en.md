@@ -7,7 +7,7 @@ A lightweight, fast image viewer for Windows and macOS.
 ## Features
 
 - **List view**: choose a folder in the left-hand tree (favorites, recent folders, locations) to see its subfolders and images as thumbnails on the right. Click a subfolder to select it and double-click it or press Enter to open it, or drop photos on it to move or copy them there.
-  - Folders with tens of thousands of images open at once; thumbnails on screen are made first and the rest are prepared in the background.
+  - Fill visible thumbnails first, then prepare nearby images. Cached images load without waiting behind slow generation; obsolete queued work is discarded after scrolling or switching folders.
   - The list updates automatically when other programs add or remove files in the folder.
   - Sort by name, date modified, or size; adjust thumbnail size
   - Select several images with Ctrl (⌘) or Shift + click and browse only the selection

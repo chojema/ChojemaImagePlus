@@ -1,5 +1,5 @@
 use crate::files::{self, Kind};
-use crate::thumbs::Thumbs;
+use crate::thumbs::{Context, Thumbs};
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder};
 use percent_encoding::percent_decode_str;
@@ -103,11 +103,20 @@ pub fn thumbnail(request: &Request<Vec<u8>>, thumbs: &Thumbs, responder: UriSche
     if files::kind(&path).is_none() {
         return responder.respond(status(StatusCode::FORBIDDEN));
     }
-    if request.uri().query().is_some_and(|query| query.split('&').any(|part| part.starts_with("retry="))) {
+    let query: Vec<_> = request.uri().query().unwrap_or_default().split('&').collect();
+    let number = |key: &str| query.iter().find_map(|part| part.strip_prefix(key)).and_then(|value| value.parse::<u64>().ok());
+    let context = match (number("owner="), number("view=")) {
+        (Some(owner), Some(revision)) => Some(Context { owner, revision }),
+        (None, None) => None,
+        _ => return responder.respond(status(StatusCode::BAD_REQUEST)),
+    };
+    // A slow request is not evidence of cache corruption. Only a decode error repairs it.
+    if query.contains(&"repair=1") {
         thumbs.invalidate(&path);
     }
-    thumbs.request(
+    thumbs.request_in_view(
         path,
+        context,
         Box::new(move |result| {
             responder.respond(match result {
                 Some((body, mime)) => ok(body, mime),

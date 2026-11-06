@@ -32,8 +32,6 @@ interface Hooks {
   dual: () => void;
   dualLayout: () => void;
   sortChanged: () => void;
-  /** Asks the backend to render the thumbnails of every open pane in the background. */
-  prefetch: () => void;
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -89,7 +87,7 @@ export class Gallery {
   private readonly cells = new Map<number, HTMLElement>();
   private metrics = { cols: 1, cellW: 0, cellH: 0, rowH: 0, pad: 10, gap: 6 };
   private frame = 0;
-  private readonly thumbnails = new ThumbnailLoader((entry, attempt) => this.thumbSrc(entry, attempt));
+  private readonly thumbnails = new ThumbnailLoader((entry, attempt, repair) => this.thumbSrc(entry, attempt, repair));
   private readonly resizeObserver = new ResizeObserver(() => this.relayout());
   private disposed = false;
   private retrySequence = 0;
@@ -360,7 +358,6 @@ export class Gallery {
     this.anchor = this.focus;
     this.grid.scrollTop = 0;
     this.render();
-    this.hooks.prefetch();
   }
 
   private selectFolder(path: string): void {
@@ -559,7 +556,6 @@ export class Gallery {
         this.grid.scrollTop = restore.top;
         this.renderVisible();
       } else if (i >= 0) this.scrollTo(i);
-      this.hooks.prefetch();
       return true;
     } catch (err) {
       this.hooks.toast(errorText(err));
@@ -617,12 +613,6 @@ export class Gallery {
     if (!this.suspended) this.grid.scrollTop = top;
     this.renderVisible();
     this.paintSelection();
-    this.hooks.prefetch();
-  }
-
-  /** The paths whose thumbnails the backend may render ahead of time. */
-  prefetchPaths(): string[] {
-    return this.entries.map((e) => e.path);
   }
 
   /** Moves the selection to `path`, typically after returning from the viewer. */
@@ -664,9 +654,9 @@ export class Gallery {
     if (this.focus >= 0) this.scrollTo(this.focus);
   }
 
-  private thumbSrc(entry: Entry, attempt = 0): string {
+  private thumbSrc(entry: Entry, attempt = 0, repair = false): string {
     const retry = attempt ? `&retry=${Date.now()}-${++this.retrySequence}` : "";
-    return `${convertFileSrc(entry.path, "thumb")}?v=${entry.modified}&s=${entry.size}${retry}`;
+    return `${convertFileSrc(entry.path, "thumb")}?v=${entry.modified}&s=${entry.size}${retry}${repair ? "&repair=1" : ""}`;
   }
 
   private render(): void {
