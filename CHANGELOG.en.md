@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.20.2
+
+- Apply startup preferences consistently to both panes: empty startup clears both panes, and last-folder startup restores each pane's own folder
+- Leave a pane empty when its saved folder is unavailable instead of substituting the other pane's folder
+
 ## 0.20.1
 
 - Let cached gallery images load without waiting behind slow thumbnail generation, and fill the visible viewport before preparing nearby images

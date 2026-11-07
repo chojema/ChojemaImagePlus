@@ -87,7 +87,14 @@ function activate(i: number): void {
   updateFavorite();
 }
 
-async function toggleDual(): Promise<void> {
+/** Remember the folder in its own pane, independently of the shared recent list. */
+async function loadPane(pane: Gallery, path: string, focusPath?: string, back = false): Promise<boolean> {
+  const ok = await pane.load(path, focusPath, back);
+  if (ok) saveSettings(pane === panes[0] ? { mainFolder: path } : { dualFolder: path });
+  return ok;
+}
+
+async function toggleDual(start: string | null = settings.dualFolder || panes[0].folder): Promise<void> {
   if (panes.length > 1) {
     const second = panes.pop()!;
     second.dispose();
@@ -101,10 +108,7 @@ async function toggleDual(): Promise<void> {
   document.body.classList.add("dual");
   saveSettings({ dual: true });
   const pane = makePane();
-  const start = settings.dualFolder || panes[0].folder;
-  if (start && !(await pane.load(start))) {
-    if (panes[0].folder) await pane.load(panes[0].folder);
-  }
+  if (start) await loadPane(pane, start);
   if (!pane.folder) pane.showEmpty();
   watchPanes();
   activate(1);
@@ -139,8 +143,12 @@ const transfer = new Transfer((relocated = [], foldersChanged = false) => {
     void p.refreshQuiet();
   }
   if (relocated.length) {
-    const dual = relocated.find((d) => within(d.from, settings.dualFolder));
-    if (dual) saveSettings({ dualFolder: dual.to + settings.dualFolder.normalize("NFC").slice(dual.from.normalize("NFC").length) });
+    for (const key of ["mainFolder", "dualFolder"] as const) {
+      const folder = settings[key];
+      if (!folder) continue;
+      const moved = relocated.find((d) => within(d.from, folder));
+      if (moved) saveSettings({ [key]: moved.to + folder.normalize("NFC").slice(moved.from.normalize("NFC").length) });
+    }
     library.setActive(active().folder);
     void library.load();
     watchPanes();
@@ -186,14 +194,18 @@ const RESTORE_KEY = "chojema-image-plus.restore";
 function applyLanguage(choice: Language): void {
   if (!syncLanguage(choice)) return;
   try {
-    sessionStorage.setItem(RESTORE_KEY, JSON.stringify({ folder: panes[0]?.folder ?? null, active: activeIndex }));
+    sessionStorage.setItem(RESTORE_KEY, JSON.stringify({
+      folder: panes[0]?.folder ?? null,
+      secondFolder: panes[1]?.folder ?? null,
+      active: activeIndex,
+    }));
   } catch {
     // Without session storage the start-up setting decides what opens.
   }
   location.reload();
 }
 
-function takeRestore(): { folder: string | null; active: number } | null {
+function takeRestore(): { folder: string | null; secondFolder: string | null; active: number } | null {
   try {
     const raw = sessionStorage.getItem(RESTORE_KEY);
     sessionStorage.removeItem(RESTORE_KEY);
@@ -289,10 +301,9 @@ function toggleFavorite(): void {
 async function navigate(path: string, focusPath?: string, pane: Gallery = active(), back = false): Promise<void> {
   if (mode !== "browser") setMode("browser");
   activate(panes.indexOf(pane));
-  const ok = await pane.load(path, focusPath, back);
+  const ok = await loadPane(pane, path, focusPath, back);
   if (!ok) return;
   watchPanes();
-  if (pane === panes[1]) saveSettings({ dualFolder: path });
   library.setActive(path);
   setTitle(`${folderName(path)} - ${APP_NAME}`);
   updateFavorite();
@@ -351,7 +362,7 @@ async function openPaths(paths: string[]): Promise<void> {
   if (paths.length === 1 && listing.folder) {
     const file = listing.entries[listing.index].path;
     const pane = active();
-    const ok = await pane.load(listing.folder, file);
+    const ok = await loadPane(pane, listing.folder, file);
     if (ok) {
       watchPanes();
       library.setActive(listing.folder);
@@ -573,14 +584,19 @@ async function init(): Promise<void> {
 
   const launch = await invoke<string[]>("take_launch_paths");
   if (launch.length) await openPaths(launch);
-  else if (restore?.folder) await navigate(restore.folder);
   else {
     const last = library.recentFirst;
-    if (settings.startup === "last" && last?.exists) await navigate(last.path);
-    else panes[0].showEmpty();
+    const folder = restore ? restore.folder : settings.startup === "last"
+      ? settings.mainFolder ?? (last?.exists ? last.path : null)
+      : null;
+    if (folder) await navigate(folder);
+    if (!panes[0].folder) panes[0].showEmpty();
   }
+  // Complete migration even with an empty pane so later right-pane visits cannot seed the left.
+  if (settings.mainFolder === null) saveSettings({ mainFolder: "" });
   if (settings.dual && mode === "browser") {
-    await toggleDual();
+    const folder = restore ? restore.secondFolder : settings.startup === "last" ? settings.dualFolder : null;
+    await toggleDual(folder || null);
     activate(restore?.active === 1 ? 1 : 0);
   }
 }

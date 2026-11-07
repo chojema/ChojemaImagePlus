@@ -12,6 +12,7 @@ export interface Settings {
   thumbSize: number;
   sidebarWidth: number;
   includePairs: boolean;
+  mainFolder: string | null;
   dual: boolean;
   dualVertical: boolean;
   dualFolder: string;
@@ -53,6 +54,8 @@ const defaults: Settings = {
   thumbSize: 160,
   sidebarWidth: 260,
   includePairs: true,
+  // null identifies preferences from before per-pane folder restoration.
+  mainFolder: null,
   dual: false,
   dualVertical: false,
   dualFolder: "",

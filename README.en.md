@@ -53,6 +53,7 @@ A lightweight, fast image viewer for Windows and macOS.
 - The Back folder button (Alt + ←, also ⌘ + [ on macOS) returns to a previously visited folder and restores selection and scroll position. It is separate from Parent folder, and each folder pane keeps its own history.
 - Drag and drop, open several files at once, image file associations (open with a double-click)
 - Settings: interface language (follow system / 한국어 / English), screen shown when the app opens (last folder / empty screen), delete stored thumbnails
+  - In dual-pane mode, each pane restores its own folder; empty startup leaves both panes empty. The horizontal or vertical layout is retained. A pane stays empty if its saved folder is unavailable.
 
 ## Supported formats
 
