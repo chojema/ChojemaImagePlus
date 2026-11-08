@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.3
+
+- Show the move, copy and trash confirmation promptly when many images are selected: pair files are now found from a single read of each folder instead of rereading it for every image
+
 ## 0.20.2
 
 - Apply startup preferences consistently to both panes: empty startup clears both panes, and last-folder startup restores each pane's own folder

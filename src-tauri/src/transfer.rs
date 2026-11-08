@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -85,33 +85,75 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Files sharing the image's base name: RAW+JPEG pairs, `photo.xmp` or `photo.jpg.xmp`
-/// sidecars, Live Photo videos and similar.
-pub fn pairs_of(image: &Path) -> Vec<PathBuf> {
-    let (Some(dir), Some(stem), Some(full)) = (
-        image.parent(),
-        image.file_stem().map(|s| s.to_string_lossy().to_lowercase()),
-        image.file_name().map(|s| s.to_string_lossy().to_lowercase()),
-    ) else {
-        return Vec::new();
-    };
-    let mut found: Vec<PathBuf> = fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.is_file())
-        .filter(|p| {
-            let name = file_name(p).to_lowercase();
-            if name == full {
-                return false;
-            }
-            let other_stem = p.file_stem().map(|s| s.to_string_lossy().to_lowercase());
-            other_stem.as_deref() == Some(stem.as_str()) || name.starts_with(&format!("{full}."))
+/// A regular file (or a symlink to one) in a listed folder.
+struct DirFile {
+    path: PathBuf,
+    lower: String,
+    symlink: bool,
+}
+
+/// Folder listings read once and shared by every selected image in that folder, so finding pair
+/// files for many images costs one folder scan instead of one per image.
+#[derive(Default)]
+pub struct PairIndex {
+    dirs: HashMap<PathBuf, Vec<DirFile>>,
+}
+
+impl PairIndex {
+    fn files(&mut self, dir: &Path) -> &[DirFile] {
+        self.dirs.entry(dir.to_path_buf()).or_insert_with(|| {
+            fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    // The entry type comes from the folder listing; only symlinks need a lookup.
+                    let kind = e.file_type().ok()?;
+                    let path = e.path();
+                    let symlink = kind.is_symlink();
+                    if !(kind.is_file() || symlink && path.is_file()) {
+                        return None;
+                    }
+                    Some(DirFile { lower: e.file_name().to_string_lossy().to_lowercase(), path, symlink })
+                })
+                .collect()
         })
-        .collect();
-    found.sort();
-    found
+    }
+
+    /// Files sharing the image's base name: RAW+JPEG pairs, `photo.xmp` or `photo.jpg.xmp`
+    /// sidecars, Live Photo videos and similar.
+    pub fn pairs_of(&mut self, image: &Path) -> Vec<PathBuf> {
+        let (Some(dir), Some(stem), Some(full)) = (
+            image.parent(),
+            image.file_stem().map(|s| s.to_string_lossy().to_lowercase()),
+            image.file_name().map(|s| s.to_string_lossy().to_lowercase()),
+        ) else {
+            return Vec::new();
+        };
+        let sidecar = format!("{full}.");
+        let mut found: Vec<PathBuf> = self
+            .files(dir)
+            .iter()
+            .filter(|f| {
+                f.lower != full
+                    && (Path::new(&f.lower).file_stem().is_some_and(|s| s.to_string_lossy() == stem)
+                        || f.lower.starts_with(&sidecar))
+            })
+            .map(|f| f.path.clone())
+            .collect();
+        found.sort();
+        found
+    }
+
+    /// Whether `path` is a symlink, as seen in its folder listing.
+    fn is_symlink(&mut self, path: &Path) -> bool {
+        path.parent().is_some_and(|dir| self.files(dir).iter().any(|f| f.symlink && f.path == path))
+    }
+}
+
+/// Files sharing the image's base name. Use [`PairIndex`] when looking up many images.
+pub fn pairs_of(image: &Path) -> Vec<PathBuf> {
+    PairIndex::default().pairs_of(image)
 }
 
 /// Inside a macOS package such as a Photos library, where outside changes corrupt the package.
@@ -127,26 +169,39 @@ pub fn plan(sources: &[String], dest: &Path, include_pairs: bool) -> Result<Plan
     if in_package(dest) {
         return Err("protected_dest".into());
     }
-    let copy_only = sources.iter().any(|s| in_package(Path::new(s)));
+    let selected: HashSet<&Path> = sources.iter().map(Path::new).collect();
+    let mut index = PairIndex::default();
+    // Selected images usually share one folder; resolve each folder only once.
+    let mut folders: HashMap<PathBuf, (bool, bool)> = HashMap::new();
+    let mut copy_only = false;
     let mut seen = HashSet::new();
     let mut files = Vec::new();
     let mut pairs = 0;
     let mut same_folder = false;
     for (group, src) in sources.iter().enumerate() {
         let path = PathBuf::from(src);
-        if path.parent().is_some_and(|p| same_dir(p, dest)) {
-            same_folder = true;
+        if let Some(parent) = path.parent() {
+            let (same, packaged) = *folders
+                .entry(parent.to_path_buf())
+                .or_insert_with(|| (same_dir(parent, dest), in_package(parent)));
+            same_folder |= same;
+            // A symlinked file can still point into a package.
+            copy_only |= packaged
+                || crate::folders::is_package(&path)
+                || (!copy_only && index.is_symlink(&path) && in_package(&path));
+        } else {
+            copy_only |= in_package(&path);
         }
         let mut members = vec![(path.clone(), false)];
         if include_pairs {
-            members.extend(pairs_of(&path).into_iter().map(|p| (p, true)));
+            members.extend(index.pairs_of(&path).into_iter().map(|p| (p, true)));
         }
         for (p, pair) in members {
             if !seen.insert(p.clone()) {
                 continue;
             }
             // A "pair" that was itself selected counts as a main file.
-            let pair = pair && !sources.iter().any(|s| Path::new(s) == p);
+            let pair = pair && !selected.contains(p.as_path());
             if pair {
                 pairs += 1;
             }
@@ -373,9 +428,10 @@ pub struct TrashPlan {
 pub fn trash_plan(sources: &[String]) -> TrashPlan {
     let selected: HashSet<PathBuf> = sources.iter().map(PathBuf::from).collect();
     let mut seen = HashSet::new();
+    let mut index = PairIndex::default();
     let pairs = sources
         .iter()
-        .flat_map(|s| pairs_of(Path::new(s)))
+        .flat_map(|s| index.pairs_of(Path::new(s)))
         .filter(|p| !selected.contains(p) && seen.insert(p.clone()))
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
@@ -451,6 +507,40 @@ mod tests {
         if cfg!(target_os = "macos") {
             assert!(plan(&[], &lib, true).is_err());
         }
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn plan_shares_folder_listing_across_many_images() {
+        let (base, a, b) = setup("many");
+        for i in 0..50 {
+            fs::write(a.join(format!("P{i}.jpg")), "x").unwrap();
+            fs::write(a.join(format!("P{i}.CR3")), "x").unwrap();
+        }
+        fs::create_dir(a.join("P0.d")).unwrap();
+        let sources: Vec<_> = (0..50).map(|i| a.join(format!("P{i}.jpg")).to_string_lossy().into_owned()).collect();
+        let p = plan(&sources, &b, true).unwrap();
+        assert_eq!(p.files.len(), 100);
+        assert_eq!(p.pairs, 50);
+        assert!(p.files.iter().all(|f| f.group == f.name[1..].split('.').next().unwrap().parse::<usize>().unwrap()));
+        assert!(!p.same_folder && !p.copy_only);
+        assert!(plan(&sources[..1], &a, true).unwrap().same_folder);
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_package_source_is_copy_only() {
+        let (base, a, b) = setup("symlink");
+        let lib = base.join("L.photoslibrary");
+        fs::create_dir_all(&lib).unwrap();
+        fs::write(lib.join("p.jpg"), "x").unwrap();
+        fs::write(lib.join("p.xmp"), "x").unwrap();
+        std::os::unix::fs::symlink(lib.join("p.jpg"), a.join("p.jpg")).unwrap();
+        fs::write(a.join("p.CR3"), "x").unwrap();
+        let p = plan(&[a.join("p.jpg").to_string_lossy().into_owned()], &b, true).unwrap();
+        assert_eq!(p.copy_only, cfg!(target_os = "macos"));
+        assert_eq!(p.pairs, 1);
         let _ = fs::remove_dir_all(base);
     }
 
