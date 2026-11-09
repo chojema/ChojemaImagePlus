@@ -185,8 +185,8 @@ export class Transfer {
             { id: "cancel", label: t.cancel },
           ]
         : [
-            { id: "move", label: t.move, primary: true },
             { id: "copy", label: t.copy },
+            { id: "move", label: t.move, primary: true },
             { id: "cancel", label: t.cancel },
           ],
       cancel: "cancel",

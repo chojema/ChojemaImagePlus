@@ -465,7 +465,7 @@ export class Gallery {
       case "copy": {
         const paths = this.selectedPaths();
         if (!paths.length) this.hooks.toast(t.transferNeed);
-        else this.hooks.transfer(paths, null, action === "transfer" ? undefined : action);
+        else this.hooks.transfer(paths, null, action === "copy" ? "copy" : undefined);
         break;
       }
       case "refresh":

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.4
+
+- Offer Copy, Move and Cancel in the confirmation dialog opened by the dual-pane move icon
+
 ## 0.20.3
 
 - Show the move, copy and trash confirmation promptly when many images are selected: pair files are now found from a single read of each folder instead of rereading it for every image
