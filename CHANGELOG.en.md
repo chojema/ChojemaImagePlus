@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.5
+
+- Fix Windows thumbnails of high-resolution photos, especially rotated portrait photos, taking tens of seconds or more: JPEGs are decoded at a reduced scale and resized before rotation
+- Add buttons to jump to the top or bottom of long folders in the gallery
+- Point the dual-pane move icon's arrow toward the other pane
+
 ## 0.20.4
 
 - Offer Copy, Move and Cancel in the confirmation dialog opened by the dual-pane move icon

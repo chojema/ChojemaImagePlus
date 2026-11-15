@@ -40,7 +40,7 @@
       <button class="sort-dir" data-browse="sort-dir" type="button"><svg viewBox="0 0 24 24"><path d="M8 5v14M4 15l4 4 4-4M16 19V5M12 9l4-4 4 4" /></svg></button>
       <input class="thumb-size" type="range" min="96" max="320" step="8" />
       <button class="transfer-button" data-browse="transfer" type="button"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M10 13h6M13.5 10.5L16 13l-2.5 2.5" /></svg></button>
-      <button class="dual-transfer" data-browse="move" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM8 13h8M13 10l3 3-3 3" /></svg></button>
+      <button class="dual-transfer" data-browse="move" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path class="toward-other" d="M8 13h8M13 10l3 3-3 3" /></svg></button>
       <button class="dual-transfer" data-browse="copy" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>
       <button class="slideshow-button" data-browse="slideshow" type="button"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M10 9l5 3-5 3z" /></svg></button>
       <button class="trash-button" data-browse="trash" type="button"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg></button>
@@ -57,6 +57,10 @@
       <span class="search-count" role="status"></span>
     </div>
     <div class="grid" tabindex="0"></div>
+    <div class="scroll-jump" hidden>
+      <button data-browse="top" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12M12 20V9M7 14l5-5 5 5" /></svg></button>
+      <button data-browse="bottom" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h12M12 4v11M7 10l5 5 5-5" /></svg></button>
+    </div>
     <section class="gallery-empty">
       <p class="gallery-empty-text"></p>
       <div class="empty-actions">

@@ -986,6 +986,49 @@ body.resizing * {
   outline: none;
 }
 
+.scroll-jump {
+  grid-area: 3 / 1;
+  align-self: end;
+  justify-self: end;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 18px 14px 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bar);
+}
+
+.scroll-jump[hidden] { display: none; }
+
+.scroll-jump button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.scroll-jump button:hover:not(:disabled) { background: var(--hover); }
+.scroll-jump button:disabled { opacity: 0.35; cursor: default; }
+
+.scroll-jump svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .grid-canvas {
   position: relative;
   width: 100%;
@@ -1574,6 +1617,16 @@ body.dual .gallery-bar .transfer-button {
 body.dual .gallery-bar .dual-transfer {
   display: grid;
 }
+
+/* The arrow points at the other pane: right from the left pane, down from the top one. */
+.dual-transfer .toward-other {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.gallery + .gallery .dual-transfer .toward-other { transform: rotate(180deg); }
+body.dual-vertical .dual-transfer .toward-other { transform: rotate(90deg); }
+body.dual-vertical .gallery + .gallery .dual-transfer .toward-other { transform: rotate(-90deg); }
 
 /* Context menu */
 

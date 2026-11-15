@@ -96,6 +96,9 @@ export class Gallery {
 
   readonly root: HTMLElement;
   private readonly grid: HTMLElement;
+  private readonly jump: HTMLElement;
+  private readonly jumpTop: HTMLButtonElement;
+  private readonly jumpBottom: HTMLButtonElement;
   private readonly empty: HTMLElement;
   private readonly emptyText: HTMLElement;
   private readonly crumbs: HTMLElement;
@@ -113,6 +116,9 @@ export class Gallery {
     container.append(this.root);
     const q = <T extends HTMLElement>(cls: string) => this.root.querySelector(`.${cls}`) as T;
     this.grid = q("grid");
+    this.jump = q("scroll-jump");
+    this.jumpTop = this.jump.querySelector('[data-browse="top"]')!;
+    this.jumpBottom = this.jump.querySelector('[data-browse="bottom"]')!;
     this.empty = q("gallery-empty");
     this.emptyText = q("gallery-empty-text");
     this.crumbs = q("crumbs");
@@ -174,6 +180,8 @@ export class Gallery {
       compare: t.compare,
       favorite: t.favoriteToggle,
       refresh: t.refresh,
+      top: t.scrollTop,
+      bottom: t.scrollBottom,
       open: t.openTitle,
       dual: t.dualToggle,
       "dual-layout": t.dualLayout,
@@ -471,6 +479,12 @@ export class Gallery {
       case "refresh":
         void this.refreshQuiet(true);
         break;
+      case "top":
+        this.grid.scrollTop = 0;
+        break;
+      case "bottom":
+        this.grid.scrollTop = this.grid.scrollHeight;
+        break;
       case "open":
         this.hooks.chooseFolder();
         break;
@@ -730,6 +744,14 @@ export class Gallery {
     this.renderVisible();
   }
 
+  /** The top and bottom buttons appear once the list is longer than about two screens. */
+  private updateJump(): void {
+    const { scrollTop, scrollHeight, clientHeight } = this.grid;
+    this.jump.hidden = !!this.suspended || !clientHeight || scrollHeight < clientHeight * 2;
+    this.jumpTop.disabled = scrollTop <= 0;
+    this.jumpBottom.disabled = scrollTop + clientHeight >= scrollHeight - 1;
+  }
+
   /** Cells in the grid: folders, then images. */
   private get slots(): number {
     return this.folders.length + this.entries.length;
@@ -754,6 +776,7 @@ export class Gallery {
 
   private renderVisible(): void {
     if (this.disposed) return;
+    this.updateJump();
     if (this.suspended || !this.grid.clientWidth || !this.grid.clientHeight) {
       this.thumbnails.clear();
       return;
