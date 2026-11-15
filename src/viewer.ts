@@ -140,6 +140,7 @@ export class Viewer {
       favorite: t.favoriteToggle,
       folders: t.folders,
       details: t.photoDetails,
+      trash: t.trash,
     };
     for (const button of this.bar.querySelectorAll<HTMLButtonElement>("[data-action]")) {
       const action = button.dataset.action!;

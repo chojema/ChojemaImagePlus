@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.6
+
+- Add a delete icon to the single-image viewer toolbar to move the current image to the trash after confirmation
+
 ## 0.20.5
 
 - Fix Windows thumbnails of high-resolution photos, especially rotated portrait photos, taking tens of seconds or more: JPEGs are decoded at a reduced scale and resized before rotation
