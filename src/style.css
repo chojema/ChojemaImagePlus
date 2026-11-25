@@ -856,7 +856,7 @@ body.resizing * {
 .gallery {
   position: relative;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
 }
@@ -911,6 +911,19 @@ body.resizing * {
 .clear-search svg { width: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 .clear-search:disabled { opacity: .3; }
 .search-count { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.gallery-status {
+  grid-area: 4 / 1;
+  padding: 4px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--bar);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+.gallery-status[hidden] { display: none; }
 
 .gallery.no-folder .gallery-bar > :not([data-browse="open"]):not([data-browse="dual"]) {
   visibility: hidden;

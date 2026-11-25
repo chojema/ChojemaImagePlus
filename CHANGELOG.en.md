@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.7
+
+- Show the file size, modified time and full path in a status line at the bottom of the gallery when exactly one image is selected
+
 ## 0.20.6
 
 - Add a delete icon to the single-image viewer toolbar to move the current image to the trash after confirmation

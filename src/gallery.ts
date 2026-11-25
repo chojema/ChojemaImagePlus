@@ -902,6 +902,10 @@ export class Gallery {
     this.root.querySelector<HTMLButtonElement>(".clear-search")!.disabled = !this.search.value;
     this.count.textContent = this.folder ? t.count(this.entries.length, this.selected.size) : "";
     const n = this.selected.size;
+    const status = this.root.querySelector<HTMLElement>(".gallery-status")!;
+    const one = n === 1 ? this.entries[[...this.selected][0]] : undefined;
+    status.hidden = !one;
+    status.textContent = status.title = one ? `${formatSize(one.size)} · ${new Date(one.modified).toLocaleString()} · ${one.path}` : "";
     this.root.querySelector(".compare-button")!.classList.toggle("ready", n >= 2 && n <= MAX_COMPARE);
   }
 
