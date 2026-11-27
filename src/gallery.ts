@@ -3,7 +3,7 @@ import { $, Entry, formatSize, isVideo, parentOf, samePath, within } from "./com
 import { errorText, t } from "./i18n";
 import { MAX_COMPARE } from "./compare";
 import { showMenu } from "./menu";
-import { saveSettings, settings, SortKey } from "./settings";
+import { settings, type SortKey } from "./settings";
 import { ThumbnailLoader } from "./thumbnails";
 import type { Done, TransferMode } from "./transfer";
 
@@ -28,10 +28,7 @@ interface Hooks {
   chooseFile: () => void;
   toast: (text: string) => void;
   activate: (gallery: Gallery) => void;
-  sizeChanged: (size: number) => void;
-  dual: () => void;
-  dualLayout: () => void;
-  sortChanged: () => void;
+  stateChanged: () => void;
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -88,7 +85,12 @@ export class Gallery {
   private metrics = { cols: 1, cellW: 0, cellH: 0, rowH: 0, pad: 10, gap: 6 };
   private frame = 0;
   private readonly thumbnails = new ThumbnailLoader((entry, attempt, repair) => this.thumbSrc(entry, attempt, repair));
-  private readonly resizeObserver = new ResizeObserver(() => this.relayout());
+  private readonly resizeObserver = new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      if (target === this.crumbs) this.crumbs.scrollLeft = this.crumbs.scrollWidth;
+      else this.relayout();
+    }
+  });
   private disposed = false;
   private retrySequence = 0;
   private readonly history: FolderVisit[] = [];
@@ -103,9 +105,7 @@ export class Gallery {
   private readonly emptyText: HTMLElement;
   private readonly crumbs: HTMLElement;
   private readonly count: HTMLElement;
-  private readonly sort: HTMLSelectElement;
-  private readonly size: HTMLInputElement;
-  private readonly favoriteButton: HTMLButtonElement;
+  private thumbSize = settings.thumbSize;
 
   constructor(
     container: HTMLElement,
@@ -123,9 +123,7 @@ export class Gallery {
     this.emptyText = q("gallery-empty-text");
     this.crumbs = q("crumbs");
     this.count = q("gallery-count");
-    this.sort = q<HTMLSelectElement>("sort");
-    this.size = q<HTMLInputElement>("thumb-size");
-    this.favoriteButton = q<HTMLButtonElement>("browse-favorite");
+    q("gallery-path-placeholder").textContent = t.noOpenFolder;
     this.search = q<HTMLInputElement>("list-search");
     this.search.placeholder = t.searchPlaceholder;
     this.search.setAttribute("aria-label", t.searchList);
@@ -149,47 +147,12 @@ export class Gallery {
     this.root.addEventListener("pointerdown", () => hooks.activate(this), true);
     this.root.addEventListener("focusin", () => hooks.activate(this));
 
-    const options: [SortKey, string][] = [
-      ["name", t.sortName],
-      ["date", t.sortDate],
-      ["size", t.sortSize],
-    ];
-    for (const [value, label] of options) this.sort.append(new Option(label, value));
-    this.sort.title = this.sort.getAttribute("aria-label") ?? "";
-    this.sort.addEventListener("change", () => {
-      saveSettings({ sort: this.sort.value as SortKey });
-      this.hooks.sortChanged();
-    });
-    this.size.title = t.thumbSize;
-    this.size.addEventListener("input", () => {
-      this.applySize();
-      hooks.sizeChanged(Number(this.size.value));
-    });
-    this.size.addEventListener("change", () => saveSettings({ thumbSize: Number(this.size.value) }));
-
-    const titles: Record<string, string> = {
-      "new-folder": t.newFolderAction,
-      back: t.folderBack,
-      up: t.up,
-      "sort-dir": t.sortDir,
-      transfer: t.transfer,
-      move: t.moveToOtherPane,
-      copy: t.copyToOtherPane,
-      trash: t.trash,
-      slideshow: t.slideshow,
-      compare: t.compare,
-      favorite: t.favoriteToggle,
-      refresh: t.refresh,
-      top: t.scrollTop,
-      bottom: t.scrollBottom,
-      open: t.openTitle,
-      dual: t.dualToggle,
-      "dual-layout": t.dualLayout,
-    };
-    for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-browse]")) {
-      const action = button.dataset.browse!;
-      button.title = titles[action] ?? "";
-      button.setAttribute("aria-label", button.title);
+    for (const [button, action, label] of [
+      [this.jumpTop, "top", t.scrollTop],
+      [this.jumpBottom, "bottom", t.scrollBottom],
+    ] as const) {
+      button.title = label;
+      button.setAttribute("aria-label", label);
       button.addEventListener("click", () => this.command(action));
     }
 
@@ -209,6 +172,7 @@ export class Gallery {
       { passive: true },
     );
     this.resizeObserver.observe(this.grid);
+    this.resizeObserver.observe(this.crumbs);
     this.bindDrag();
     this.grid.addEventListener("click", (e) => {
       if (this.suppressClick) {
@@ -279,23 +243,14 @@ export class Gallery {
     });
   }
 
-  applySettings(): void {
-    this.sort.value = settings.sort;
-    this.size.value = String(settings.thumbSize);
-    this.applySize();
-    this.updateSortDir();
-  }
-
-  /** Re-applies shared sort settings after they change in either pane. */
+  /** Re-applies shared sort settings after a toolbar change. */
   applySort(): void {
-    this.sort.value = settings.sort;
-    this.updateSortDir();
     this.resort();
   }
 
   setSize(size: number): void {
-    this.size.value = String(size);
-    this.applySize();
+    this.thumbSize = size;
+    this.relayout();
   }
 
   setActive(on: boolean): void {
@@ -426,13 +381,12 @@ export class Gallery {
     this.root.remove();
   }
 
-  private applySize(): void {
-    this.grid.style.setProperty("--thumb", `${this.size.value}px`);
-    this.relayout();
+  get previousFolder(): string | undefined {
+    return this.history.at(-1)?.folder;
   }
 
-  private updateSortDir(): void {
-    this.root.querySelector(".sort-dir")!.classList.toggle("desc", settings.sortDesc);
+  get compareReady(): boolean {
+    return this.selected.size >= 2 && this.selected.size <= MAX_COMPARE;
   }
 
   command(action: string): void {
@@ -450,10 +404,6 @@ export class Gallery {
         if (parent) this.hooks.navigate(parent);
         break;
       }
-      case "sort-dir":
-        saveSettings({ sortDesc: !settings.sortDesc });
-        this.hooks.sortChanged();
-        break;
       case "favorite":
         this.hooks.favorite();
         break;
@@ -485,15 +435,6 @@ export class Gallery {
       case "bottom":
         this.grid.scrollTop = this.grid.scrollHeight;
         break;
-      case "open":
-        this.hooks.chooseFolder();
-        break;
-      case "dual":
-        this.hooks.dual();
-        break;
-      case "dual-layout":
-        this.hooks.dualLayout();
-        break;
     }
   }
 
@@ -508,11 +449,6 @@ export class Gallery {
     const entries = [...this.selected].sort((a, b) => a - b).map((i) => this.entries[i]);
     if (entries.some((e) => isVideo(e))) return this.hooks.toast(t.videoNoCompare);
     this.hooks.compare(entries);
-  }
-
-  setFavorite(on: boolean): void {
-    this.favoriteButton.classList.toggle("on", on);
-    this.favoriteButton.disabled = !this.folder;
   }
 
   get current(): Entry | undefined {
@@ -693,11 +629,6 @@ export class Gallery {
     this.root.querySelector<HTMLButtonElement>(".clear-search")!.disabled = !this.search.value;
     if (this.folder) this.root.dataset.drop = this.folder;
     else delete this.root.dataset.drop;
-    const previous = this.history.at(-1);
-    const back = this.root.querySelector<HTMLButtonElement>('[data-browse="back"]')!;
-    back.disabled = !previous;
-    back.title = previous ? `${t.folderBack}\n${previous.folder}` : t.folderBack;
-    this.root.querySelector<HTMLButtonElement>('[data-browse="up"]')!.disabled = !this.folder || !parentOf(this.folder);
   }
 
   /** Start visible thumbnails immediately, including during continuous scrolling. */
@@ -724,7 +655,7 @@ export class Gallery {
     const pad = 10;
     const gap = 6;
     const width = Math.max(0, this.grid.clientWidth - pad * 2);
-    const thumb = Number(this.size.value) || 160;
+    const thumb = this.thumbSize || 160;
     const cols = Math.max(1, Math.floor((width + gap) / (thumb + gap)));
     const cellW = cols > 0 ? (width - gap * (cols - 1)) / cols : thumb;
     const cellH = cellW + 20;
@@ -747,7 +678,9 @@ export class Gallery {
   /** The top and bottom buttons appear once the list is longer than about two screens. */
   private updateJump(): void {
     const { scrollTop, scrollHeight, clientHeight } = this.grid;
-    this.jump.hidden = !!this.suspended || !clientHeight || scrollHeight < clientHeight * 2;
+    // Leave enough room for both buttons without covering the search bar.
+    this.jump.hidden = !!this.suspended || clientHeight < 44 || scrollHeight < clientHeight * 2;
+    this.jump.classList.toggle("compact", clientHeight < 90);
     this.jumpTop.disabled = scrollTop <= 0;
     this.jumpBottom.disabled = scrollTop + clientHeight >= scrollHeight - 1;
   }
@@ -873,7 +806,10 @@ export class Gallery {
       button.textContent = label;
       button.title = path;
       button.dataset.drop = path;
-      if (i === chain.length - 1) button.classList.add("current");
+      if (i === chain.length - 1) {
+        button.classList.add("current");
+        button.setAttribute("aria-current", "location");
+      }
       button.addEventListener("click", () => this.hooks.navigate(path));
       if (i > 0) {
         const sep = document.createElement("span");
@@ -898,15 +834,16 @@ export class Gallery {
     }
     const shown = this.entries.length + this.folders.length;
     const total = this.allEntries.length + this.allFolders.length;
-    this.root.querySelector<HTMLElement>(".search-count")!.textContent = this.search.value.trim() ? t.searchCount(shown, total) : "";
+    const searchCount = this.root.querySelector<HTMLElement>(".search-count")!;
+    searchCount.textContent = searchCount.title = this.search.value.trim() ? t.searchCount(shown, total) : "";
     this.root.querySelector<HTMLButtonElement>(".clear-search")!.disabled = !this.search.value;
-    this.count.textContent = this.folder ? t.count(this.entries.length, this.selected.size) : "";
+    this.count.textContent = this.count.title = this.folder ? t.count(this.entries.length, this.selected.size) : "";
     const n = this.selected.size;
     const status = this.root.querySelector<HTMLElement>(".gallery-status")!;
     const one = n === 1 ? this.entries[[...this.selected][0]] : undefined;
     status.hidden = !one;
     status.textContent = status.title = one ? `${formatSize(one.size)} · ${new Date(one.modified).toLocaleString()} · ${one.path}` : "";
-    this.root.querySelector(".compare-button")!.classList.toggle("ready", n >= 2 && n <= MAX_COMPARE);
+    this.hooks.stateChanged();
   }
 
   private select(next: Set<number>): void {

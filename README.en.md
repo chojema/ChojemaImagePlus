@@ -38,8 +38,8 @@ A lightweight, fast image viewer for Windows and macOS.
   - Bringing them back into the window and releasing does nothing. Files inside a package such as a photo library can only be copied.
 - **Dual pane** (F6): split the list into two panes, side by side or top and bottom, to work with two folders at once.
   - Drag thumbnails from one pane to the other, or press M, to move or copy them to the other pane's folder.
-  - Separate Move and Copy icons in each pane operate on the selected images and target the opposite folder.
-  - Switch panes with Tab; the folder tree and favorites open in the active pane (blue underline).
+  - The shared toolbar's Move and Copy arrows point from the active pane to the opposite folder. Each pane shows its own folder path.
+  - Press Tab from the thumbnail grid to switch panes. In the toolbar, Tab moves to the next control. The folder tree and favorites open in the active pane (blue line under its path).
 - **Move to Trash**: send selected images to the Trash (Recycle Bin on Windows) with the trash button, the Delete key (⌘ + Backspace on macOS), or the right-click menu. Pair files can go along; in the image view the next image is shown afterwards.
 - **Right-click menu**: view, compare side by side, move or copy to another folder, show in Finder (File Explorer), move to Trash
 - **Slideshow** (S or the play button): choose the folder and whether to include subfolders, the order (list sort order / random), images smaller than the window (original size / enlarge) and larger (shrink / original size), the interval, what to show (current date and time, file name, position), looping, and full screen. Settings are remembered.
@@ -98,7 +98,7 @@ The installers are not code-signed yet, so a warning may appear the first time y
 | Select all | Ctrl (⌘) + A |
 | Compare 2–4 selected images | C |
 | Move or copy selected images to another folder | M (to the other pane in dual mode), drag onto a folder |
-| Dual pane on/off / switch pane | F6 / Tab |
+| Dual pane on/off / switch pane | F6 / Tab from the thumbnail grid |
 | Undo the last move or copy | Ctrl (⌘) + Z |
 | Move selected images to the Trash | Delete, ⌘ + Backspace (macOS) |
 | Slideshow | S |

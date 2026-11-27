@@ -19,6 +19,9 @@
 !/tsconfig.json
 !/vite.config.ts
 
+!/tests/
+!/tests/gallery-toolbar.mjs
+
 !/docs/
 /docs/*
 !/docs/BUILD.md

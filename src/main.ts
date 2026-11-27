@@ -13,7 +13,7 @@ import { Library } from "./library";
 import { menuOpen } from "./menu";
 import { modalOpen } from "./modal";
 import { Transfer, type TransferMode } from "./transfer";
-import { loadSettings, saveSettings, settings, SettingsDialog, syncLanguage } from "./settings";
+import { loadSettings, saveSettings, settings, SettingsDialog, syncLanguage, type SortKey } from "./settings";
 import { Slideshow, SlideshowDialog } from "./slideshow";
 import { FolderTree } from "./tree";
 import { Viewer } from "./viewer";
@@ -38,6 +38,72 @@ const panes: Gallery[] = [];
 let activeIndex = 0;
 const active = (): Gallery => panes[activeIndex];
 
+const galleryToolbar = $("gallery-toolbar");
+const galleryButtons: Record<string, HTMLButtonElement> = Object.fromEntries(
+  Array.from(galleryToolbar.querySelectorAll<HTMLButtonElement>("[data-browse]"), (button) => [button.dataset.browse!, button]),
+);
+const gallerySort = galleryToolbar.querySelector<HTMLSelectElement>(".sort")!;
+const gallerySize = galleryToolbar.querySelector<HTMLInputElement>(".thumb-size")!;
+
+function initGalleryToolbar(): void {
+  const labels: Record<string, string> = {
+    back: t.folderBack, up: t.up, open: t.openTitle, dual: t.dualToggle, "dual-layout": t.dualLayout,
+    "new-folder": t.newFolderAction, favorite: t.favoriteToggle, refresh: t.refresh, "sort-dir": t.sortDir,
+    transfer: t.transfer, move: t.moveToOtherPane, copy: t.copyToOtherPane, trash: t.trash,
+    slideshow: t.slideshow, compare: t.compare,
+  };
+  const globalActions: Record<string, () => void> = {
+    open: () => void chooseFolder(),
+    dual: () => void toggleDual(),
+    "dual-layout": toggleDualLayout,
+    "sort-dir": () => {
+      saveSettings({ sortDesc: !settings.sortDesc });
+      panes.forEach((pane) => pane.applySort());
+    },
+  };
+  for (const [action, button] of Object.entries(galleryButtons)) {
+    button.title = labels[action];
+    button.setAttribute("aria-label", button.title);
+    button.addEventListener("click", globalActions[action] ?? (() => active().command(action)));
+  }
+  for (const [key, label] of Object.entries({ name: t.sortName, date: t.sortDate, size: t.sortSize })) {
+    gallerySort.append(new Option(label, key));
+  }
+  gallerySort.value = settings.sort;
+  gallerySort.title = t.sortBy;
+  gallerySort.setAttribute("aria-label", t.sortBy);
+  gallerySort.addEventListener("change", () => {
+    saveSettings({ sort: gallerySort.value as SortKey });
+    panes.forEach((pane) => pane.applySort());
+  });
+  gallerySize.value = String(settings.thumbSize);
+  gallerySize.title = t.thumbSize;
+  gallerySize.setAttribute("aria-label", t.thumbSize);
+  gallerySize.addEventListener("input", () => panes.forEach((pane) => pane.setSize(Number(gallerySize.value))));
+  gallerySize.addEventListener("change", () => saveSettings({ thumbSize: Number(gallerySize.value) }));
+}
+
+function updateGalleryToolbar(): void {
+  const pane = active();
+  const folder = pane.folder;
+  const previous = pane.previousFolder;
+  const destination = panes[1 - activeIndex]?.folder;
+  galleryToolbar.classList.toggle("from-second-pane", activeIndex === 1);
+  for (const action of ["new-folder", "favorite", "refresh", "sort-dir", "transfer", "slideshow", "compare", "trash"]) {
+    galleryButtons[action].disabled = !folder;
+  }
+  galleryButtons.back.disabled = !previous;
+  galleryButtons.back.title = previous ? `${t.folderBack}\n${previous}` : t.folderBack;
+  galleryButtons.up.disabled = !folder || !parentOf(folder);
+  galleryButtons.move.disabled = galleryButtons.copy.disabled = !folder || !destination;
+  galleryButtons.move.title = destination ? `${t.moveToOtherPane}\n${destination}` : t.moveToOtherPane;
+  galleryButtons.copy.title = destination ? `${t.copyToOtherPane}\n${destination}` : t.copyToOtherPane;
+  galleryButtons.favorite.classList.toggle("on", library.isFavorite(folder));
+  galleryButtons.compare.classList.toggle("ready", pane.compareReady);
+  galleryButtons["sort-dir"].classList.toggle("desc", settings.sortDesc);
+  gallerySort.disabled = gallerySize.disabled = !folder;
+}
+
 function makePane(): Gallery {
   const pane: Gallery = new Gallery($("galleries"), {
     navigate: (path, back) => void navigate(path, undefined, pane, back),
@@ -54,16 +120,12 @@ function makePane(): Gallery {
     export: (paths) => void startExport(paths, pane.folder, pane),
     reveal: (path) => void invoke("reveal", { path }),
     favorite: () => toggleFavorite(),
-    chooseFolder: () => void chooseFolder(),
+    chooseFolder: () => void chooseFolder(pane),
     chooseFile: () => void chooseFile(),
     toast: showToast,
     activate: (g) => activate(panes.indexOf(g)),
-    sizeChanged: (size) => panes.forEach((p) => p !== pane && p.setSize(size)),
-    dual: () => void toggleDual(),
-    dualLayout: () => toggleDualLayout(),
-    sortChanged: () => panes.forEach((p) => p.applySort()),
+    stateChanged: updateGalleryToolbar,
   });
-  pane.applySettings();
   panes.push(pane);
   return pane;
 }
@@ -80,6 +142,10 @@ function activate(i: number): void {
   activeIndex = i;
   panes.forEach((p, j) => p.setActive(j === i && panes.length > 1));
   if (!changed) return;
+  syncActiveFolder();
+}
+
+function syncActiveFolder(): void {
   const folder = active().folder;
   library.setActive(folder);
   if (folder) void tree.reveal(folder);
@@ -90,8 +156,9 @@ function activate(i: number): void {
 /** Remember the folder in its own pane, independently of the shared recent list. */
 async function loadPane(pane: Gallery, path: string, focusPath?: string, back = false): Promise<boolean> {
   const ok = await pane.load(path, focusPath, back);
-  if (ok) saveSettings(pane === panes[0] ? { mainFolder: path } : { dualFolder: path });
-  return ok;
+  if (!ok || !panes.includes(pane)) return false;
+  saveSettings(pane === panes[0] ? { mainFolder: path } : { dualFolder: path });
+  return true;
 }
 
 async function toggleDual(start: string | null = settings.dualFolder || panes[0].folder): Promise<void> {
@@ -108,10 +175,12 @@ async function toggleDual(start: string | null = settings.dualFolder || panes[0]
   document.body.classList.add("dual");
   saveSettings({ dual: true });
   const pane = makePane();
-  if (start) await loadPane(pane, start);
-  if (!pane.folder) pane.showEmpty();
-  watchPanes();
+  pane.showEmpty();
   activate(1);
+  if (start) await loadPane(pane, start);
+  if (panes[1] !== pane) return;
+  watchPanes();
+  if (pane === active()) syncActiveFolder();
 }
 
 function toggleDualLayout(): void {
@@ -283,7 +352,7 @@ function currentFolder(): string | null {
 function updateFavorite(): void {
   const folder = currentFolder();
   const on = library.isFavorite(folder);
-  for (const p of panes) p.setFavorite(library.isFavorite(p.folder));
+  updateGalleryToolbar();
   const button = $<HTMLButtonElement>("favorite-button");
   button.classList.toggle("on", on);
   button.disabled = !folder;
@@ -304,11 +373,8 @@ async function navigate(path: string, focusPath?: string, pane: Gallery = active
   const ok = await loadPane(pane, path, focusPath, back);
   if (!ok) return;
   watchPanes();
-  library.setActive(path);
-  setTitle(`${folderName(path)} - ${APP_NAME}`);
-  updateFavorite();
+  if (pane === active() && mode === "browser") syncActiveFolder();
   void library.load();
-  void tree.reveal(path);
 }
 
 function openViewer(entries: Entry[], index: number, folder: string | null): void {
@@ -382,9 +448,9 @@ async function chooseFile(): Promise<void> {
   if (typeof picked === "string") await openPaths([picked]);
 }
 
-async function chooseFolder(): Promise<void> {
+async function chooseFolder(pane = active()): Promise<void> {
   const picked = await open({ multiple: false, directory: true });
-  if (typeof picked === "string") await navigate(picked);
+  if (typeof picked === "string" && panes.includes(pane)) await navigate(picked, undefined, pane);
 }
 
 /** Without a destination: the other pane's folder in dual mode, otherwise a folder picker. */
@@ -483,7 +549,8 @@ window.addEventListener("keydown", (e) => {
       void toggleDual();
       return;
     }
-    if (e.code === "Tab" && !mod && panes.length > 1) {
+    if (e.code === "Tab" && !mod && !e.shiftKey && !e.altKey && panes.length > 1
+      && (target === document.body || target.classList.contains("grid"))) {
       e.preventDefault();
       activate(1 - activeIndex);
       active().focusGrid();
@@ -575,6 +642,7 @@ async function init(): Promise<void> {
   }
   const restore = takeRestore();
   document.documentElement.style.setProperty("--sidebar", `${settings.sidebarWidth}px`);
+  initGalleryToolbar();
   makePane();
   document.body.classList.toggle("dual-vertical", settings.dualVertical);
   setMode("browser");

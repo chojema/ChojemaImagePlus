@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.8
+
+- Use one gallery toolbar while keeping each pane's folder path and active indicator visible.
+- Point the Move and Copy arrows toward the opposite pane. Disable both actions when that pane has no open folder.
+- Wrap related buttons together in narrow windows and allow keyboard navigation through the toolbar in dual-pane mode.
+
 ## 0.20.7
 
 - Show the file size, modified time and full path in a status line at the bottom of the gallery when exactly one image is selected
