@@ -253,6 +253,9 @@ export class Gallery {
     this.relayout();
   }
 
+  /** Details of the single selected file, shown in the app-wide status line. */
+  statusText = "";
+
   setActive(on: boolean): void {
     this.root.classList.toggle("active", on);
   }
@@ -839,10 +842,8 @@ export class Gallery {
     this.root.querySelector<HTMLButtonElement>(".clear-search")!.disabled = !this.search.value;
     this.count.textContent = this.count.title = this.folder ? t.count(this.entries.length, this.selected.size) : "";
     const n = this.selected.size;
-    const status = this.root.querySelector<HTMLElement>(".gallery-status")!;
     const one = n === 1 ? this.entries[[...this.selected][0]] : undefined;
-    status.hidden = !one;
-    status.textContent = status.title = one ? `${formatSize(one.size)} · ${new Date(one.modified).toLocaleString()} · ${one.path}` : "";
+    this.statusText = one ? `${formatSize(one.size)} · ${new Date(one.modified).toLocaleString()} · ${one.path}` : "";
     this.hooks.stateChanged();
   }
 

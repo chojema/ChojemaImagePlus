@@ -39,6 +39,7 @@ let activeIndex = 0;
 const active = (): Gallery => panes[activeIndex];
 
 const galleryToolbar = $("gallery-toolbar");
+const galleryStatus = $("gallery-status");
 const galleryButtons: Record<string, HTMLButtonElement> = Object.fromEntries(
   Array.from(galleryToolbar.querySelectorAll<HTMLButtonElement>("[data-browse]"), (button) => [button.dataset.browse!, button]),
 );
@@ -102,6 +103,8 @@ function updateGalleryToolbar(): void {
   galleryButtons.compare.classList.toggle("ready", pane.compareReady);
   galleryButtons["sort-dir"].classList.toggle("desc", settings.sortDesc);
   gallerySort.disabled = gallerySize.disabled = !folder;
+  galleryStatus.hidden = !pane.statusText;
+  galleryStatus.textContent = galleryStatus.title = pane.statusText;
 }
 
 function makePane(): Gallery {

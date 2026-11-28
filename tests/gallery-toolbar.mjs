@@ -197,8 +197,9 @@ try {
         await checkLayout(page, 1200, 800);
         await first.locator(".clear-search").click();
         await first.locator(".cell[data-index]").click();
-        await first.locator(".gallery-status").waitFor();
-        assert.match(await first.locator(".gallery-status").textContent(), /Sample\.png$/);
+        await page.locator("#gallery-status").waitFor();
+        assert.match(await page.locator("#gallery-status").textContent(), /Sample\.png$/);
+        assert.equal((await page.locator("#gallery-status").boundingBox()).width, page.viewportSize().width, "Status line spans the window");
         await page.goto(`${url}/?oneOpen`);
         await second.locator(".gallery-path-placeholder").waitFor();
         assert.equal(await move.isDisabled(), true, "No move when the other pane has no folder");

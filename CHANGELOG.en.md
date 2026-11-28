@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.9
+
+- Span the single-selection status line across the full app window, including in dual-pane mode. It follows the active pane's selection.
+
 ## 0.20.8
 
 - Use one gallery toolbar while keeping each pane's folder path and active indicator visible.

@@ -620,6 +620,7 @@ body.fullscreen #compare-bar.peek {
   display: grid;
   /* Reserve 350px for the gallery, including two side-by-side panes. */
   grid-template-columns: clamp(0px, calc(100% - 355px), var(--sidebar)) 5px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
 }
 
@@ -970,6 +971,8 @@ body:not(.dual) .gallery.no-folder .gallery-path {
 .search-count { font-size: 11px; }
 .search-count:empty { display: none; }
 .gallery-status {
+  grid-column: 1 / -1;
+  min-width: 0;
   padding: 4px 10px;
   border-top: 1px solid var(--line);
   background: var(--bar);
